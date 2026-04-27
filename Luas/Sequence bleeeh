@@ -1,0 +1,36 @@
+--Sequence bleeeh
+
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local enable = gui.Checkbox(ref, "rage.freeze", "Rage Sequence Freeze", false)
+local limit_slider = gui.Slider(ref, "rage.freeze.limit", "Choke Limit", 22, 10, 22)
+
+local choke = 0
+local flip = false
+
+callbacks.Register("CreateMove", function(cmd)
+    if not enable:GetValue() then return end
+
+    local limit = limit_slider:GetValue()
+
+    choke = choke + 1
+
+    if choke < limit then
+        cmd:SetSendPacket(false)
+
+        flip = not flip
+        if flip then
+            cmd:SetSideMove(450)
+        else
+            cmd:SetSideMove(-450)
+        end
+
+        cmd.tick_count = cmd.tick_count + 50
+    else
+        cmd:SetSendPacket(true)
+
+        engine.AddOutSeqNr(15)
+
+        choke = 0
+    end
+end)
