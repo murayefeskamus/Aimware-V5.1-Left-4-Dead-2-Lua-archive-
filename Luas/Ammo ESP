@@ -1,0 +1,165 @@
+--Ammo esp
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Ammo ESP", 320, 400, 300, 0)
+
+local enable        = gui.Checkbox(gb, "ammo.enable",      "Enable Ammo ESP",        true)
+local show_world    = gui.Checkbox(gb, "ammo.world",      "Player World ESP",        true)
+local show_hud      = gui.Checkbox(gb, "ammo.hud",        "Player HUD List",        true)
+local show_floor    = gui.Checkbox(gb, "ammo.floor",      "Floor Weapon ESP",        true)
+local show_melee    = gui.Checkbox(gb, "ammo.melee",      "Show Melee (Floor)",      false)
+local colorpick    = gui.ColorPicker(gb, "ammo.color",    "Player Colour",  255, 220, 80,  255)
+local floor_col    = gui.ColorPicker(gb, "ammo.floorcol", "Floor Colour",  100, 220, 255, 255)
+
+local font    = draw.CreateFont("Tahoma", 13, 700)
+local font_hud = draw.CreateFont("Tahoma", 12, 600)
+
+
+
+local WEP_NAMES = {
+    CPistol              = "Pistol",
+    CMagnumPistol        = "Magnum",
+    CRifle              = "Rifle",
+    CRifle_AK47          = "AK47",
+    CRifle_Desert        = "Desert",
+    CRifle_SG552        = "SG552",
+    CRifle_M60          = "M60",
+    CSMG                = "SMG",
+    CSMG_Silenced        = "SMG-S",
+    CSMG_MP5            = "MP5",
+    CPumpShotgun        = "Pump",
+    CShotgun_Chrome      = "Chrome",
+    CAutoShotgun        = "Auto",
+    CShotgun_SPAS        = "SPAS",
+    CHuntingRifle        = "Hunting",
+    CSniper_Military    = "Sniper",
+    CSniperRifle_AWP    = "AWP",
+    CSniperRifle_Scout  = "Scout",
+    CGrenadeLauncher    = "GL",
+    CTerrorMeleeWeapon  = "Melee",
+    CChainsaw            = "Chainsaw",
+}
+
+local function GetWepName(wclass)
+    return WEP_NAMES[wclass] or wclass
+end
+
+local function DrawOutlinedText(x, y, text, r, g, b, a)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,  text)
+    draw.Text(x+1, y,  text)
+    draw.Text(x,  y-1, text)
+    draw.Text(x,  y+1, text)
+    draw.Color(r, g, b, a)
+    draw.Text(x, y, text)
+end
+
+
+
+callbacks.Register("Draw", "ammo_esp", function()
+    if not enable:GetValue() then return end
+
+    local sw, sh  = draw.GetScreenSize()
+    local r, g, b, _  = colorpick:GetValue()
+    local fr, fg, fb, _ = floor_col:GetValue()
+
+    -- player
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+
+    local hud_x = 20
+    local hud_y = sh - 220
+
+    if show_hud:GetValue() then
+        draw.SetFont(font_hud)
+        draw.Color(0, 0, 0, 180)
+        draw.Text(hud_x+1, hud_y+1, "-- Ammo --")
+        draw.Color(255, 255, 255, 200)
+        draw.Text(hud_x, hud_y, "-- Ammo --")
+        hud_y = hud_y + 16
+    end
+
+    for _, ent in pairs(players) do
+        if not ent:IsAlive() then goto continue end
+        if ent:IsDormant() then goto continue end
+
+        local wep = ent:GetPropEntity("m_hActiveWeapon")
+        if not wep then goto continue end
+
+        local clip  = wep:GetPropInt("m_iClip1") or -1
+        if clip < 0 then goto continue end
+
+        local wclass = wep:GetClass() or "?"
+        local wname  = GetWepName(wclass)
+        local name  = ent:GetName() or "?"
+
+        
+        local max_clip = 30
+        local ratio    = math.min(1, clip / max_clip)
+        local cr = math.floor(255 * (1 - ratio))
+        local cg = math.floor(255 * ratio)
+        local cb = 0
+
+      
+        if show_world:GetValue() then
+            local origin = ent:GetAbsOrigin()
+            local sx, sy = client.WorldToScreen(origin + Vector3(0, 0, 72))
+            if sx and sy then
+                local label = wname .. " " .. clip
+                local tw, _ = draw.GetTextSize(label)
+                DrawOutlinedText(sx - tw/2, sy, label, cr, cg, cb, 255)
+            end
+        end
+
+        
+        if show_hud:GetValue() then
+            draw.SetFont(font_hud)
+            local line = string.format("%-12s %-8s %d", name, wname, clip)
+            draw.Color(0, 0, 0, 180)
+            draw.Text(hud_x+1, hud_y+1, line)
+            draw.Color(cr, cg, cb, 255)
+            draw.Text(hud_x, hud_y, line)
+            hud_y = hud_y + 14
+        end
+
+        ::continue::
+    end
+
+    -- floor shit
+    if not show_floor:GetValue() then return end
+
+    local ents = entities.FindByClass("CTerrorWeapon") or {}
+    for _, e in pairs(ents) do
+        if e:IsDormant() then goto continue end
+
+        local owner = e:GetPropInt("m_hOwner") or 0
+        if owner ~= -1 then goto continue end
+
+        local wclass = e:GetClass() or "?"
+        local clip  = e:GetPropInt("m_iClip1") or -1
+
+        local is_melee = (wclass == "CTerrorMeleeWeapon" or wclass == "CChainsaw")
+        if is_melee and not show_melee:GetValue() then goto continue end
+
+        local pos = e:GetAbsOrigin()
+        if not pos then goto continue end
+
+        local sx, sy = client.WorldToScreen(pos + Vector3(0, 0, 20))
+        if not sx or not sy then goto continue end
+
+        local wname = GetWepName(wclass)
+        local label
+        if is_melee or clip < 0 then
+            label = wname
+        else
+            label = wname .. " [" .. clip .. "]"
+        end
+
+        local tw, th = draw.GetTextSize(label)
+        draw.Color(0, 0, 0, 150)
+        draw.FilledRect(sx - tw/2 - 3, sy - 2, sx + tw/2 + 3, sy + th + 2)
+        DrawOutlinedText(sx - tw/2, sy, label, fr, fg, fb, 255)
+
+        ::continue::
+    end
+end)
