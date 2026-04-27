@@ -1,0 +1,160 @@
+local ref = gui.Reference("Visuals", "World")
+local box = gui.Groupbox(ref, "Tank Frustration", 320, 600, 305, 0)
+
+local enable    = gui.Checkbox(box, "tankfrust.enable", "Enable Tank Frustration", true)
+local showNum  = gui.Checkbox(box, "tankfrust.num", "Show Value", true)
+local barWidth  = gui.Slider(box, "tankfrust.barw", "Bar Width", 4, 2, 12)
+local xPad      = gui.Slider(box, "tankfrust.xpad", "X Padding", 4, 0, 20)
+local fontSize  = gui.Slider(box, "tankfrust.fontsize", "Font Size", 13, 8, 24)
+local fontBold  = gui.Checkbox(box, "tankfrust.bold", "Bold Font", true)
+local fontSel  = gui.Combobox(box, "tankfrust.font", "Font",
+    "Tahoma",
+    "Verdana",
+    "Arial",
+    "Trebuchet MS",
+    "Courier New",
+    "Impact",
+    "Georgia",
+    "Comic Sans MS",
+    "Times New Roman"
+)
+
+local frustBuffer = {}
+local lastTeam = -1
+
+local fontCache = nil
+local lastFontState = ""
+
+local fontNames = {
+    "Tahoma", "Verdana", "Arial", "Trebuchet MS",
+    "Courier New", "Impact", "Georgia", "Comic Sans MS", "Times New Roman"
+}
+
+local function UpdateFont()
+    local state = tostring(fontSel:GetValue()) .. "|" .. tostring(fontSize:GetValue()) .. "|" .. tostring(fontBold:GetValue())
+    if state ~= lastFontState then
+        local weight = fontBold:GetValue() and 800 or 400
+        fontCache = draw.CreateFont(fontNames[fontSel:GetValue() + 1], fontSize:GetValue(), weight)
+        lastFontState = state
+    end
+end
+
+local function GetPlayers()
+    local t = entities.FindByClass("CTerrorPlayer")
+    if not t or #t == 0 then t = entities.FindByClass("CCSPlayer") end
+    return t or {}
+end
+
+local function IsTank(ent)
+    if not ent then return false end
+    return (ent:GetPropInt("m_zombieClass") or 0) == 8
+end
+
+local function GetFrustration(ent)
+    if not ent then return 0 end
+    return ent:GetPropInt("m_frustration") or 0
+end
+
+local function GetBoxEdges(ent)
+    local mins  = ent:GetMins()
+    local maxs  = ent:GetMaxs()
+    local origin = ent:GetAbsOrigin()
+    if not mins or not maxs or not origin then return nil end
+
+    local ox, oy, oz = origin.x, origin.y, origin.z
+
+    local corners = {
+        {ox+mins.x, oy+mins.y, oz+mins.z}, {ox+mins.x, oy+maxs.y, oz+mins.z},
+        {ox+maxs.x, oy+mins.y, oz+mins.z}, {ox+maxs.x, oy+maxs.y, oz+mins.z},
+        {ox+mins.x, oy+mins.y, oz+maxs.z}, {ox+mins.x, oy+maxs.y, oz+maxs.z},
+        {ox+maxs.x, oy+mins.y, oz+maxs.z}, {ox+maxs.x, oy+maxs.y, oz+maxs.z},
+    }
+
+    local left, right, top, bottom
+    for _, c in ipairs(corners) do
+        local sx, sy = client.WorldToScreen(Vector3(c[1], c[2], c[3]))
+        if sx and sy then
+            left  = left  and math.min(left, sx)  or sx
+            right  = right  and math.max(right, sx)  or sx
+            top    = top    and math.min(top, sy)    or sy
+            bottom = bottom and math.max(bottom, sy)  or sy
+        end
+    end
+
+    return left, right, top, bottom
+end
+
+callbacks.Register("Draw", function()
+    if not enable:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local myTeam = me:GetTeamNumber()
+
+    if myTeam ~= lastTeam then
+        frustBuffer = {}
+        lastTeam = myTeam
+    end
+
+    if myTeam ~= 2 then return end
+
+    UpdateFont()
+    if fontCache then draw.SetFont(fontCache) end
+
+    for _, ent in pairs(GetPlayers()) do
+        if IsTank(ent) and ent:IsAlive() and not ent:IsDormant() and ent:GetTeamNumber() == 3 then
+
+            local frust = GetFrustration(ent)
+            frustBuffer[ent:GetIndex()] = frustBuffer[ent:GetIndex()] or 100
+            frustBuffer[ent:GetIndex()] = frustBuffer[ent:GetIndex()] + (frust - frustBuffer[ent:GetIndex()]) * 0.05
+            local val = frustBuffer[ent:GetIndex()]
+
+            local left, right, top, bottom = GetBoxEdges(ent)
+            if not left or not right or not top or not bottom then goto continue end
+
+            local sxBar = right + xPad:GetValue()
+            local syTop = top
+            local syBot = bottom
+            local bw    = barWidth:GetValue()
+
+            
+            draw.Color(255, 255, 255, 220)
+            draw.FilledRect(sxBar, syTop, sxBar + bw, syBot)
+
+            
+            local blackH = (syBot - syTop) * (val / 100)
+            draw.Color(0, 0, 0, 220)
+            draw.FilledRect(sxBar, syTop, sxBar + bw, syTop + blackH)
+
+            
+            draw.Color(0, 0, 0, 255)
+            draw.OutlinedRect(sxBar - 1, syTop - 1, sxBar + bw + 1, syBot + 1)
+            draw.Color(255, 255, 255, 180)
+            draw.OutlinedRect(sxBar - 2, syTop - 2, sxBar + bw + 2, syBot + 2)
+
+           
+            if showNum:GetValue() then
+                local txt = tostring(math.floor(val)) .. "%"
+                local tw, th = draw.GetTextSize(txt)
+
+                local tx = sxBar - 6
+                local ty = syTop - 16
+
+                
+                draw.Color(0, 0, 0, 180)
+                draw.FilledRect(tx - 3, ty - 2, tx + tw + 3, ty + th + 2)
+                draw.Color(255, 255, 255, 200)
+                draw.OutlinedRect(tx - 4, ty - 3, tx + tw + 4, ty + th + 3)
+
+                
+                draw.Color(255, 255, 255, 255)
+                draw.Text(tx, ty, txt)
+            end
+
+            ::continue::
+        end
+    end
+end)
+
+print("FuckmePLZ")
