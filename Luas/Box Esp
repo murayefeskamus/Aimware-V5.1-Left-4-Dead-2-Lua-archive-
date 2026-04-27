@@ -1,0 +1,141 @@
+--boxesp 
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "L4D2 Full Model Glow", 330, 550, 300, 0)
+
+local enable     = gui.Checkbox(gb, "l4d2.fullglow.enable", "Enable ESP", false)
+local teamcheck  = gui.Checkbox(gb, "l4d2.fullglow.team", "Team Check", true)
+
+local style = gui.Combobox(gb, "l4d2.fullglow.style", "Box Style",
+    "Original",
+    "Corner",
+    "Filled"
+)
+
+local thickness  = gui.Slider(gb, "l4d2.fullglow.thickness", "Thickness", 3, 1, 15)
+local alpha      = gui.Slider(gb, "l4d2.fullglow.alpha", "Alpha", 180, 0, 255)
+
+local colorpick  = gui.ColorPicker(gb, "l4d2.fullglow.color", "Glow Colour", 255, 0, 0, 255)
+
+gui.Text(gb, "Quick Palette")
+
+local function SetColor(r,g,b)
+    colorpick:SetValue(r,g,b,alpha:GetValue())
+end
+
+gui.Button(gb, "Red", function() SetColor(255,40,40) end)
+gui.Button(gb, "Blue", function() SetColor(50,150,255) end)
+gui.Button(gb, "Green", function() SetColor(0,255,120) end)
+gui.Button(gb, "Purple", function() SetColor(180,0,255) end)
+gui.Button(gb, "White", function() SetColor(255,255,255) end)
+
+
+local function SafeDormant(ent)
+    local ok, val = pcall(function()
+        return ent:IsDormant()
+    end)
+    if not ok then return false end
+    return val
+end
+
+local function GetAllEntities()
+    local list = {}
+    local players = entities.FindByClass("CTerrorPlayer")
+    local commons = entities.FindByClass("CInfected")
+
+    if players then
+        for _, v in pairs(players) do table.insert(list, v) end
+    end
+    if commons then
+        for _, v in pairs(commons) do table.insert(list, v) end
+    end
+    return list
+end
+
+
+local function DrawGlow()
+    if not enable:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+
+    local myTeam = me:GetTeamNumber()
+    local r,g,b,_ = colorpick:GetValue()
+    local a = alpha:GetValue()
+
+    local targets = GetAllEntities()
+    if not targets then return end
+
+    for _, ent in pairs(targets) do
+        if ent ~= me and ent:IsAlive() and not SafeDormant(ent) then
+
+           
+            if teamcheck:GetValue() then
+                local team = ent.GetTeamNumber and ent:GetTeamNumber()
+                if team and team == myTeam then goto continue end
+            end
+
+            local mins   = ent:GetMins()
+            local maxs   = ent:GetMaxs()
+            local origin = ent:GetAbsOrigin()
+
+            if not mins or not maxs or not origin then goto continue end
+
+            local points = {
+                Vector3(mins.x, mins.y, mins.z), Vector3(mins.x, maxs.y, mins.z),
+                Vector3(maxs.x, maxs.y, mins.z), Vector3(maxs.x, mins.y, mins.z),
+                Vector3(mins.x, mins.y, maxs.z), Vector3(mins.x, maxs.y, maxs.z),
+                Vector3(maxs.x, maxs.y, maxs.z), Vector3(maxs.x, mins.y, maxs.z),
+            }
+
+            local left, right, top, bottom
+            for i = 1, #points do
+                local world = origin + points[i]
+                local sx, sy = client.WorldToScreen(world)
+                if sx and sy then
+                    left   = left   and math.min(left, sx) or sx
+                    right  = right  and math.max(right, sx) or sx
+                    top    = top    and math.min(top, sy) or sy
+                    bottom = bottom and math.max(bottom, sy) or sy
+                end
+            end
+
+            if not left or not right or not top or not bottom then goto continue end
+
+            local selected = style:GetValue()
+            local w = right - left
+            local h = bottom - top
+
+            for i = 1, thickness:GetValue() do
+                local glowAlpha = a / i
+                draw.Color(r, g, b, glowAlpha)
+
+           
+                if selected == 0 then
+                    draw.OutlinedRect(left - i, top - i, right + i, bottom + i)
+                end
+
+      
+                if selected == 1 then
+                    local cw, ch = w * 0.25, h * 0.25
+                    draw.Line(left - i, top - i, left + cw, top - i)
+                    draw.Line(left - i, top - i, left - i, top + ch)
+                    draw.Line(right + i, top - i, right - cw, top - i)
+                    draw.Line(right + i, top - i, right + i, top + ch)
+                    draw.Line(left - i, bottom + i, left + cw, bottom + i)
+                    draw.Line(left - i, bottom + i, left, bottom - ch)
+                    draw.Line(right + i, bottom + i, right - cw, bottom + i)
+                    draw.Line(right + i, bottom + i, right, bottom - ch)
+                end
+
+          
+                if selected == 2 then
+                    draw.FilledRect(left - i, top - i, right + i, bottom + i)
+                end
+            end
+            ::continue::
+        end
+    end
+end
+
+callbacks.Register("Draw", DrawGlow)
