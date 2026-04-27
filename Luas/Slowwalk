@@ -1,0 +1,35 @@
+--slowwalkshit
+
+local REF = gui.Reference("Misc")
+local TAB = gui.Tab(REF, "l4d2.crawl", "L4D2 Crawl")
+local GROUP = gui.Groupbox(TAB, "Movement Control", 16, 16, 296, 200)
+
+local crawl_enable = gui.Checkbox(GROUP, "l4d2.crawl.enable", "Ultra Crawl Mode", false)
+
+local crawl_speed_percent = gui.Slider(GROUP, "l4d2.crawl.speed", "Crawl Speed (%)", 25, 5, 60)
+
+local MAX_ENGINE_SPEED = 450
+
+callbacks.Register("CreateMove", function(cmd)
+    if not crawl_enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then return end
+
+    local forward = cmd:GetForwardMove()
+    local side    = cmd:GetSideMove()
+    local up      = cmd:GetUpMove()
+  
+    if forward == 0 and side == 0 then return end
+
+    local length = math.sqrt(forward*forward + side*side)
+    if length > 0 then
+        local factor = crawl_speed_percent:GetValue() / 100 -- % to factor
+        forward = (forward / length) * MAX_ENGINE_SPEED * factor
+        side    = (side / length) * MAX_ENGINE_SPEED * factor
+    end
+
+    cmd:SetForwardMove(forward)
+    cmd:SetSideMove(side)
+    cmd:SetUpMove(up * 0.2) 
+end)
