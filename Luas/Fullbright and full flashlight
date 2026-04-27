@@ -1,0 +1,73 @@
+-- fullbright ve full flash
+local ref = gui.Reference("Misc", "General", "Extra")
+local fullbright = gui.Checkbox(ref, "misc.fullbright", "Fullbright", false)
+local flashlight = gui.Checkbox(ref, "misc.flashlight", "Full Flashlight", false)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local FCVAR_CHEAT = 2^14
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if not icvar then 
+    print("[Cvar] ICvar baslatilamadi!")
+    return 
+end
+
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetVal = ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", ptr)[0][13]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
+end
+
+local cv_fb = SetupConVar("mat_fullbright")
+local cv_fl = SetupConVar("r_flashlightfov")
+
+if cv_fb then cv_fb.RemoveFlags(cv_fb.ptr, FCVAR_CHEAT) end
+if cv_fl then cv_fl.RemoveFlags(cv_fl.ptr, FCVAR_CHEAT) end
+
+
+callbacks.Register("CreateMove", "fb_fl_logic", function(cmd)
+
+    if cv_fb then
+        cv_fb.SetVal(cv_fb.ptr, fullbright:GetValue() and 1.0 or 0.0)
+    end
+    
+    if cv_fl then
+        cv_fl.SetVal(cv_fl.ptr, flashlight:GetValue() and 120.0 or 45.0)
+    end
+end)
+
+
+local function OnUnload()
+
+    if cv_fb then 
+        cv_fb.SetVal(cv_fb.ptr, 0.0) 
+    end
+    if cv_fl then 
+        cv_fl.SetVal(cv_fl.ptr, 45.0) 
+    end
+    print("disabled")
+end
+
+callbacks.Register("Unload", OnUnload)
+
+print("activated")
