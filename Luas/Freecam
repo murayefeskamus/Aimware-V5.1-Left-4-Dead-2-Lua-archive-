@@ -1,0 +1,135 @@
+-- freecam
+local ref             = gui.Reference("Misc", "General", "Extra")
+local freecam_enable  = gui.Checkbox(ref, "misc.freecam",       "Free Camera", false)
+local freecam_speed   = gui.Slider(ref,  "misc.freecam_speed",  "Cam Speed",   5, 1, 20, 1)
+
+-- FFI Definitions
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+]]
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local OVERRIDE_VIEW_INDEX    = 19
+
+-- Offsets
+local VS_ORIGIN_X, VS_ORIGIN_Y, VS_ORIGIN_Z = 0x3C, 0x40, 0x44
+local VS_ANGLES_X, VS_ANGLES_Y, VS_ANGLES_Z = 0x48, 0x4C, 0x50
+
+-- Logic & Hooking
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if not cm_sig then print("freecam CM sig fail") return end
+
+local global_addr = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+if global_addr == 0 then print("[FreeCam] Global null") return end
+
+local clientmode = ffi.cast("uintptr_t*", global_addr)[0]
+if clientmode == 0 then print("freecam CM null") return end
+
+print(string.format("freecam CM: 0x%X", tonumber(clientmode)))
+
+local vtable   = ffi.cast("uintptr_t*", ffi.cast("uintptr_t*", clientmode)[0])
+local slot_ptr = vtable + OVERRIDE_VIEW_INDEX
+
+local GC = { original = slot_ptr[0], hook_fn = nil, slot_ptr = slot_ptr }
+print(string.format("freecam Orig: 0x%X", tonumber(GC.original)))
+
+-- Helper functions (Direct access)
+local function ReadFloat(ptr, offset)
+    return ffi.cast("float*", ptr + offset)[0]
+end
+
+local function WriteFloat(ptr, offset, val)
+    ffi.cast("float*", ptr + offset)[0] = val
+end
+
+local function AngleVectors(ax, ay)
+    local p, y = math.rad(ax), math.rad(ay)
+    local sp, cp, sy, cy = math.sin(p), math.cos(p), math.sin(y), math.cos(y)
+    return { x = cp*cy, y = cp*sy, z = -sp }, { x = sy, y = -cy, z = 0 }
+end
+
+local cam_pos    = nil
+local IN_FORWARD, IN_BACK, IN_MOVELEFT, IN_MOVERIGHT = 8, 16, 512, 1024
+local IN_JUMP, IN_DUCK = 2, 4
+
+local ov_t = ffi.typeof("void(__fastcall*)(void*, void*, void*)")
+
+local function Hooked_OverrideView(ecx, edx, pSetup)
+    if GC.original == nil then return end
+    
+    ffi.cast(ov_t, GC.original)(ecx, edx, pSetup)
+
+    if not freecam_enable:GetValue() then
+        cam_pos = nil
+        return
+    end
+
+    local ptr = ffi.cast("uintptr_t", pSetup)
+    if ptr == 0 then return end
+
+    if cam_pos == nil then
+        cam_pos = {
+            x = ReadFloat(ptr, VS_ORIGIN_X),
+            y = ReadFloat(ptr, VS_ORIGIN_Y),
+            z = ReadFloat(ptr, VS_ORIGIN_Z) + 80,
+        }
+        print(string.format("freecam Start: %.1f %.1f %.1f", cam_pos.x, cam_pos.y, cam_pos.z))
+    end
+
+    WriteFloat(ptr, VS_ORIGIN_X, cam_pos.x)
+    WriteFloat(ptr, VS_ORIGIN_Y, cam_pos.y)
+    WriteFloat(ptr, VS_ORIGIN_Z, cam_pos.z)
+end
+
+GC.hook_fn = ffi.cast(ov_t, Hooked_OverrideView)
+
+-- Apply Hook
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, PAGE_EXECUTE_READWRITE, old)
+slot_ptr[0] = ffi.cast("uintptr_t", GC.hook_fn)
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, old[0], old)
+print("freecam hooked")
+
+callbacks.Register("CreateMove", "freecam_move", function(cmd)
+    if not freecam_enable:GetValue() or cam_pos == nil then return end
+
+    local ang = engine.GetViewAngles()
+    local fwd, right = AngleVectors(ang.x, ang.y)
+    local speed = freecam_speed:GetValue()
+
+    if bit.band(cmd.buttons, IN_FORWARD)   ~= 0 then
+        cam_pos.x = cam_pos.x + fwd.x * speed
+        cam_pos.y = cam_pos.y + fwd.y * speed
+        cam_pos.z = cam_pos.z + fwd.z * speed
+    end
+    if bit.band(cmd.buttons, IN_BACK)      ~= 0 then
+        cam_pos.x = cam_pos.x - fwd.x * speed
+        cam_pos.y = cam_pos.y - fwd.y * speed
+        cam_pos.z = cam_pos.z - fwd.z * speed
+    end
+    if bit.band(cmd.buttons, IN_MOVERIGHT) ~= 0 then
+        cam_pos.x = cam_pos.x + right.x * speed
+        cam_pos.y = cam_pos.y + right.y * speed
+    end
+    if bit.band(cmd.buttons, IN_MOVELEFT)  ~= 0 then
+        cam_pos.x = cam_pos.x - right.x * speed
+        cam_pos.y = cam_pos.y - right.y * speed
+    end
+    if bit.band(cmd.buttons, IN_JUMP)      ~= 0 then cam_pos.z = cam_pos.z + speed end
+    if bit.band(cmd.buttons, IN_DUCK)      ~= 0 then cam_pos.z = cam_pos.z - speed end
+
+    cmd.viewangles, cmd.forwardmove, cmd.sidemove, cmd.upmove, cmd.buttons = ang, 0, 0, 0, 0
+end)
+
+callbacks.Register("Unload", function()
+    if GC.original and GC.slot_ptr then
+        local old2 = ffi.new("uint32_t[1]")
+        ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 4, PAGE_EXECUTE_READWRITE, old2)
+        GC.slot_ptr[0] = ffi.cast("uintptr_t", GC.original)
+        ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 4, old2[0], old2)
+        print("freecam unhooked")
+    end
+    cam_pos = nil 
+end)
