@@ -1,0 +1,20 @@
+ffi.cdef[[
+    int VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+]]
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local patch_addr = mem.FindPattern("client.dll", "74 2D D9")
+local original_byte = ffi.cast("uint8_t*", patch_addr)[0]
+
+local function POOOFFF(byte)
+    local old = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", patch_addr), 1, PAGE_EXECUTE_READWRITE, old)
+    ffi.cast("uint8_t*", patch_addr)[0] = byte
+    ffi.C.VirtualProtect(ffi.cast("void*", patch_addr), 1, old[0], old)
+end
+
+POOOFFF(0xEB)
+
+callbacks.Register("Unload", function()
+    POOOFFF(original_byte)
+end)
