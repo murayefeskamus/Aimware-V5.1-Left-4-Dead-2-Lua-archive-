@@ -1,0 +1,45 @@
+--fıriluk
+
+local ref = gui.Reference("Misc", "General", "Extra")
+local gb  = gui.Groupbox(ref, "Free Look", 295, 365, 300, 0)
+
+local enable  = gui.Checkbox(gb, "fl.enable", "Enable Free Look", false)
+local keybind = gui.Keybox(gb, "fl.key", "Hold Key", 0) 
+
+local saved_angles = nil
+local free_angles  = nil
+
+callbacks.Register("CreateMove", "freelook", function(cmd)
+    if not enable:GetValue() then
+        saved_angles = nil
+        free_angles  = nil
+        return
+    end
+
+    local keycode = keybind:GetValue()
+    if keycode == 0 then return end
+    
+    local held = input.IsButtonDown(keycode)
+
+    if held then
+        if not free_angles then
+            saved_angles = engine.GetViewAngles()
+            free_angles  = EulerAngles(saved_angles.x, saved_angles.y, 0)
+        end
+
+        local cur = engine.GetViewAngles()
+        free_angles = EulerAngles(cur.x, cur.y, 0)
+
+        cmd:SetViewAngles(EulerAngles(saved_angles.x, saved_angles.y, 0))
+    else
+        if saved_angles then
+            engine.SetViewAngles(EulerAngles(saved_angles.x, saved_angles.y, 0))
+            saved_angles = nil
+            free_angles  = nil
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    gb:Remove()
+end)
