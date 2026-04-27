@@ -1,0 +1,113 @@
+-- chat fucking spy again
+local ref = gui.Reference("Misc", "General", "Extra")
+local chatspy_enable  = gui.Checkbox(ref, "chatspy.enable",    "Chat Spy",          true)
+local ignore_team    = gui.Checkbox(ref, "chatspy.ignoreteam", "Ignore Same Team",  false)
+local survivor_preset = gui.Combobox(ref, "chatspy.survpreset", "Survivor Color",    "Green",  "Yellow", "Blue", "White")
+local infected_preset = gui.Combobox(ref, "chatspy.infpreset",  "Infected Color",    "Green",  "Yellow", "Red", "White")
+local spec_preset    = gui.Combobox(ref, "chatspy.specpreset", "Spectator Color",    "Yellow","Green",  "specfuckingcolor", "White")
+
+client.AllowListener("player_say")
+client.AllowListener("player_say_team")
+
+local SURV_COLORS = {
+    [0] = "\x05",  
+    [1] = "\x04",  
+    [2] = "\x03",  
+    [3] = "\x01",  
+}
+local INF_COLORS = {
+    [0] = "\x05",  
+    [1] = "\x04",  
+    [2] = "\x03",  
+    [3] = "\x01",  
+}
+local SPEC_COLORS = {
+    [0] = "\x04",  
+    [1] = "\x05",  
+    [2] = "\x03",  
+    [3] = "\x01",  
+}
+
+-- chudchat
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if cm_sig == nil then
+    print("[ChatSpy] ClientMode sig bulunamadi")
+    return
+end
+
+local function GetCHudChat()
+    local ok, result = pcall(function()
+        local global_addr = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+        if global_addr == 0 then return nil end
+        local clientmode = ffi.cast("uintptr_t*", global_addr)[0]
+        if clientmode == 0 then return nil end
+        local chudchat = ffi.cast("uintptr_t*", clientmode + 0x18)[0]
+        if chudchat == 0 then return nil end
+        return chudchat
+    end)
+    if not ok or result == nil then return nil end
+    return result
+end
+
+-- chatprintf
+local function ChatPrintf(idx, msg)
+    local chudchat = GetCHudChat()
+    if chudchat == nil then
+        print("[ChatSpy] CHudChat alinamadi")
+        return
+    end
+    local ok, err = pcall(function()
+        local vtable  = ffi.cast("uintptr_t**", chudchat)[0]
+        if vtable == nil then return end
+        local fn_addr = vtable[23]
+        if fn_addr == 0 then return end
+        local fn = ffi.cast("void(__stdcall*)(void*, int, int, const char*)", fn_addr)
+        fn(ffi.cast("void*", chudchat), idx, 0, msg)
+    end)
+    if not ok then print("[ChatSpy] Hata: " .. tostring(err)) end
+end
+
+callbacks.Register("FireGameEvent", "chatspy_event", function(event)
+    if not chatspy_enable:GetValue() then return end
+
+    local ename = event:GetName()
+    if ename ~= "player_say" and ename ~= "player_say_team" then return end
+
+    local userid = event:GetInt("userid")
+    local text  = event:GetString("text")
+    if not text or text == "" then return end
+
+    local idx = client.GetPlayerIndexByUserID(userid)
+    if idx == nil or idx == 0 then return end
+
+    local lp = entities.GetLocalPlayer()
+    if lp and lp:GetIndex() == idx then return end
+
+    local ent  = entities.GetByIndex(idx)
+    local name = (ent and ent:GetName()) or ("Player#" .. userid)
+    local team = ent and ent:GetTeamNumber() or 0
+
+    
+    if ignore_team:GetValue() and team ~= 1 then
+        if lp and lp:GetTeamNumber() == team then return end
+    end
+
+    local color, label
+    if team == 2 then
+        color = SURV_COLORS[survivor_preset:GetValue()]
+        label = "(survivor)"
+    elseif team == 3 then
+        color = INF_COLORS[infected_preset:GetValue()]
+        label = "(infected)"
+    elseif team == 1 then
+        color = SPEC_COLORS[spec_preset:GetValue()]
+        label = "(spectator)"
+    else
+        color = "\x01"
+        label = "(unknown)"
+    end
+
+    ChatPrintf(idx, string.format("%s%s \x01%s: %s", color, label, name, text))
+end)
+
+print("chatprintfuckspyloaded")
