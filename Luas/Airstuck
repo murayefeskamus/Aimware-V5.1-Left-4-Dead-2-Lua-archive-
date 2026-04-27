@@ -1,0 +1,84 @@
+ffi.cdef[[
+    int VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+]]
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local CREATEMOVE_INDEX       = 27
+local IN_JUMP                = 2
+local IN_DUCK                = 4
+
+local GC = { original = nil, hook_fn = nil, slot_ptr = nil }
+
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if not cm_sig then
+    print("sig null")
+    return
+end
+
+local global_addr = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+if global_addr == 0 then print("globaladdr null") return end
+
+local pClientMode = ffi.cast("uintptr_t*", global_addr)[0]
+if pClientMode == 0 then print("cm null") return end
+
+local vtable   = ffi.cast("uintptr_t*", ffi.cast("uintptr_t*", pClientMode)[0])
+local slot_ptr = vtable + CREATEMOVE_INDEX
+
+GC.slot_ptr = slot_ptr
+GC.original = slot_ptr[0]
+
+local cm_t = ffi.typeof("bool(__fastcall*)(void*, void*, float, void*)")
+
+local airstuck_key = gui.Keybox(gui.Reference("Misc", "General", "Extra"), "ffi.airstuck_key", "Airstuck Key", 0)
+
+local tick = false
+
+local function Hooked_CreateMove(ecx, edx, flInputSampleTime, cmd)
+    local result = ffi.cast(cm_t, GC.original)(ecx, edx, flInputSampleTime, cmd)
+    if cmd == nil then return result end
+
+    local key = airstuck_key:GetValue()
+    if key ~= 0 and input.IsButtonDown(key) then
+        local tick_ptr    = ffi.cast("int*",   ffi.cast("uintptr_t", cmd) + 0x08)
+        local buttons_ptr = ffi.cast("int*",   ffi.cast("uintptr_t", cmd) + 0x24)
+        local fwd_ptr     = ffi.cast("float*", ffi.cast("uintptr_t", cmd) + 0x18)
+        local side_ptr    = ffi.cast("float*", ffi.cast("uintptr_t", cmd) + 0x1C)
+        local up_ptr      = ffi.cast("float*", ffi.cast("uintptr_t", cmd) + 0x20)
+
+        tick_ptr[0] = 0x7FFFFFFF
+
+        if tick then
+            buttons_ptr[0] = bit.bor(buttons_ptr[0], IN_JUMP)
+            buttons_ptr[0] = bit.band(buttons_ptr[0], bit.bnot(IN_DUCK))
+        else
+            buttons_ptr[0] = bit.bor(buttons_ptr[0], IN_DUCK)
+            buttons_ptr[0] = bit.band(buttons_ptr[0], bit.bnot(IN_JUMP))
+        end
+        tick = not tick
+
+        fwd_ptr[0]  = 0
+        side_ptr[0] = 0
+        up_ptr[0]   = 0
+    end
+
+    return result
+end
+
+GC.hook_fn = ffi.cast(cm_t, Hooked_CreateMove)
+
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, PAGE_EXECUTE_READWRITE, old)
+slot_ptr[0] = ffi.cast("uintptr_t", GC.hook_fn)
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, old[0], old)
+
+print("hook done amına koyayım")
+
+callbacks.Register("Unload", function()
+    if GC.original and GC.slot_ptr then
+        local old2 = ffi.new("uint32_t[1]")
+        ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 4, PAGE_EXECUTE_READWRITE, old2)
+        GC.slot_ptr[0] = ffi.cast("uintptr_t", GC.original)
+        ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 4, old2[0], old2)
+        print("hook unloıaded mmuck")
+    end
+end)
