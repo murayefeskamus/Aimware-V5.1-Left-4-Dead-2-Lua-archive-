@@ -1,0 +1,65 @@
+local ref = gui.Reference("Visuals", "Local")
+local gbox = gui.Groupbox(ref, "NAZI", 0, 450, 300, 0)
+
+local hide_game_cb = gui.Checkbox(gbox, "lua_swasticross_hide", "auswählen", false)
+local outline_cb = gui.Checkbox(gbox, "lua_swasticross_outline", "Siyah Dış Çizgi Ekle", true)
+local color = gui.ColorPicker(gbox, "lua_swasticross_col", "Renk", 255, 0, 0, 255)
+local size = gui.Slider(gbox, "lua_swasticross_size", "Boyut", 10, 5, 50)
+local thickness = gui.Slider(gbox, "lua_swasticross_thick", "Kalınlık", 1, 1, 5)
+
+local last_state = nil
+
+local function DrawCrosshairShape(cx, cy, s, t)
+    local t_half = t / 2
+
+    draw.FilledRect(cx - t_half, cy - s, cx + t_half, cy + s)
+    draw.FilledRect(cx - s, cy - t_half, cx + s, cy + t_half)
+    -- Kollar
+    draw.FilledRect(cx, cy - s - t_half, cx + s, cy - s + t_half)
+    draw.FilledRect(cx + s - t_half, cy, cx + s + t_half, cy + s)
+    draw.FilledRect(cx - s, cy + s - t_half, cx, cy + s + t_half)
+    draw.FilledRect(cx - s - t_half, cy - s, cx - s + t_half, cy)
+end
+
+callbacks.Register("Draw", "swastika_crosshair_logic", function()
+    local active = hide_game_cb:GetValue()
+
+    if active ~= last_state then
+        if active then 
+
+            client.Command("crosshair 0", false) 
+        else 
+
+            client.Command("crosshair 1", false) 
+        end
+        last_state = active
+    end
+
+    if active then
+        local me = entities.GetLocalPlayer()
+        if not me or not me:IsAlive() then return end
+
+        local sw, sh = draw.GetScreenSize()
+        local cx, cy = sw / 2, sh / 2
+        
+        local r, g, b, a = color:GetValue()
+        local s = size:GetValue()
+        local t = thickness:GetValue()
+
+        if outline_cb:GetValue() then
+            draw.Color(0, 0, 0, a)
+            DrawCrosshairShape(cx + 1, cy, s, t)
+            DrawCrosshairShape(cx - 1, cy, s, t)
+            DrawCrosshairShape(cx, cy + 1, s, t)
+            DrawCrosshairShape(cx, cy - 1, s, t)
+        end
+
+        draw.Color(r, g, b, a)
+        DrawCrosshairShape(cx, cy, s, t)
+    end
+end)
+
+callbacks.Register("Unload", function()
+    client.Command("crosshair 1", false)
+    print(" oyun crossunu gotune sok.")
+end)
