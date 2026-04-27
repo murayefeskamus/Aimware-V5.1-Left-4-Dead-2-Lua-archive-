@@ -1,0 +1,124 @@
+--ladders
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Ladder ESP", 320, 400, 300, 0)
+
+local enable    = gui.Checkbox(gb, "ladder.enable",  "Enable Ladder ESP", true)
+local show_box  = gui.Checkbox(gb, "ladder.box",     "Bounding Box",      true)
+local show_line = gui.Checkbox(gb, "ladder.line",    "Center Line",       true)
+local show_dir  = gui.Checkbox(gb, "ladder.dir",     "Normal Arrow",      true)
+local max_dist  = gui.Slider(gb,   "ladder.dist",    "Max Distance",      2000, 100, 8000)
+local col       = gui.ColorPicker(gb, "ladder.col",  "Color", 0, 220, 255, 255)
+
+local font = draw.CreateFont("Tahoma", 12, 700)
+
+local function Line(p1, p2, r, g, b, a)
+    local sx1, sy1 = client.WorldToScreen(p1)
+    local sx2, sy2 = client.WorldToScreen(p2)
+    if not sx1 or not sx2 then return end
+    draw.Color(0, 0, 0, math.floor(a * 0.5))
+    draw.Line(sx1+1, sy1+1, sx2+1, sy2+1)
+    draw.Color(r, g, b, a)
+    draw.Line(sx1, sy1, sx2, sy2)
+end
+
+callbacks.Register("Draw", "ladder_esp", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local mypos = lp:GetAbsOrigin()
+
+    local r, g, b, a = col:GetValue()
+
+    local ladders = entities.FindByClass("CFuncSimpleLadder") or {}
+    for _, ent in pairs(ladders) do
+
+        local mins = ent:GetMins()
+        local maxs = ent:GetMaxs()
+        if not mins or not maxs then goto continue end
+
+        local cx = (mins.x + maxs.x) / 2
+        local cy = (mins.y + maxs.y) / 2
+        local cz = (mins.z + maxs.z) / 2
+
+        local center = Vector3(cx, cy, cz)
+
+        local dist = (center - mypos):Length()
+        if dist > max_dist:GetValue() then goto continue end
+
+        if show_box:GetValue() then
+            local c = {
+                Vector3(mins.x, mins.y, mins.z),
+                Vector3(mins.x, maxs.y, mins.z),
+                Vector3(maxs.x, maxs.y, mins.z),
+                Vector3(maxs.x, mins.y, mins.z),
+                Vector3(mins.x, mins.y, maxs.z),
+                Vector3(mins.x, maxs.y, maxs.z),
+                Vector3(maxs.x, maxs.y, maxs.z),
+                Vector3(maxs.x, mins.y, maxs.z),
+            }
+
+            local sc = {}
+            for i, v in ipairs(c) do
+                local sx, sy = client.WorldToScreen(v)
+                sc[i] = sx and {sx, sy} or nil
+            end
+
+            local function L(i1, i2)
+                if sc[i1] and sc[i2] then
+                    draw.Color(r, g, b, math.floor(a * 0.7))
+                    draw.Line(sc[i1][1], sc[i1][2], sc[i2][1], sc[i2][2])
+                end
+            end
+
+            L(1,2) L(2,3) L(3,4) L(4,1)
+            -- Üst dörtgen
+            L(5,6) L(6,7) L(7,8) L(8,5)
+            -- Dikey kenarlar
+            L(1,5) L(2,6) L(3,7) L(4,8)
+        end
+
+        if show_line:GetValue() then
+            local bot = Vector3(cx, cy, mins.z)
+            local top = Vector3(cx, cy, maxs.z)
+            Line(bot, top, r, g, b, a)
+
+            local bx, by = client.WorldToScreen(bot)
+            if bx and by then
+                draw.Color(r, g, b, a)
+                draw.OutlinedCircle(bx, by, 5)
+            end
+
+            local tx, ty = client.WorldToScreen(top)
+            if tx and ty then
+                draw.Color(r, g, b, a)
+                draw.Line(tx-6, ty, tx+6, ty)
+                draw.Line(tx, ty-6, tx, ty+6)
+            end
+        end
+
+        if show_dir:GetValue() then
+            local ok, normal = pcall(function()
+                return ent:GetPropVector("m_climbableNormal")
+            end)
+            if ok and normal then
+                local arrowStart = center
+                local arrowEnd   = Vector3(
+                    cx + normal.x * 50,
+                    cy + normal.y * 50,
+                    cz + normal.z * 50
+                )
+                Line(arrowStart, arrowEnd, 255, 255, 0, 220)
+
+                local ex, ey = client.WorldToScreen(arrowEnd)
+                if ex and ey then
+                    draw.Color(255, 255, 0, 220)
+                    draw.FilledCircle(ex, ey, 3)
+                end
+            end
+        end
+
+        ::continue::
+    end
+end)
