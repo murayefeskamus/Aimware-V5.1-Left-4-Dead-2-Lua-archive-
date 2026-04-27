@@ -1,0 +1,99 @@
+--voteeeee
+client.AllowListener("vote_started")
+client.AllowListener("vote_ended")
+client.AllowListener("vote_changed")
+client.AllowListener("vote_passed")
+client.AllowListener("vote_failed")
+client.AllowListener("vote_cast_yes")
+client.AllowListener("vote_cast_no")
+
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if cm_sig == nil then
+    print("[Vote] ClientMode sig bulunamadi")
+    return
+end
+
+local function GetCHudChat()
+    local ok, result = pcall(function()
+        local global_addr = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+        if global_addr == 0 then return nil end
+        local clientmode = ffi.cast("uintptr_t*", global_addr)[0]
+        if clientmode == 0 then return nil end
+        local chudchat = ffi.cast("uintptr_t*", clientmode + 0x18)[0]
+        if chudchat == 0 then return nil end
+        return chudchat
+    end)
+    if not ok or result == nil then return nil end
+    return result
+end
+
+local function ChatPrintf(idx, msg)
+    local chudchat = GetCHudChat()
+    if chudchat == nil then return end
+    local ok, err = pcall(function()
+        local vtable  = ffi.cast("uintptr_t**", chudchat)[0]
+        if vtable == nil then return end
+        local fn_addr = vtable[23]
+        if fn_addr == 0 then return end
+        local fn = ffi.cast("void(__stdcall*)(void*, int, int, const char*)", fn_addr)
+        fn(ffi.cast("void*", chudchat), idx, 0, msg)
+    end)
+    if not ok then print("[Vote] Hata: " .. tostring(err)) end
+end
+
+local function GetLocalIdx()
+    local lp = entities.GetLocalPlayer()
+    if not lp then return 0 end
+    return lp:GetIndex()
+end
+
+
+local function GetNameByEntityID(entityid)
+    if not entityid or entityid <= 0 then return ("Ent#" .. tostring(entityid)) end
+    local ent = entities.GetByIndex(entityid)
+    return (ent and ent:GetName()) or ("Ent#" .. entityid)
+end
+
+callbacks.Register("FireGameEvent", "vote_revealer", function(event)
+    local ename = event:GetName()
+    local idx  = GetLocalIdx()
+    local tag  = "\x01(VOTE)"
+
+    if ename == "vote_started" then
+        local issue    = event:GetString("issue") or "?"
+        local param    = event:GetString("param1") or ""
+        local initiator = event:GetInt("initiator") or 0
+        local name      = GetNameByEntityID(initiator)
+        ChatPrintf(idx, string.format("%s \x01%s started: %s %s", tag, name, issue, param))
+
+    elseif ename == "vote_cast_yes" then
+        
+        local entityid = event:GetInt("entityid") or 0
+        local name    = GetNameByEntityID(entityid)
+        ChatPrintf(idx, string.format("%s \x04%s \x05voted YES", tag, name))
+
+    elseif ename == "vote_cast_no" then
+        local entityid = event:GetInt("entityid") or 0
+        local name    = GetNameByEntityID(entityid)
+        ChatPrintf(idx, string.format("%s \x03%s \x01voted NO", tag, name))
+
+    elseif ename == "vote_changed" then
+        
+        local yes  = event:GetInt("yesVotes")      or 0
+        local no    = event:GetInt("noVotes")        or 0
+        local total = event:GetInt("potentialVotes")  or 0
+        ChatPrintf(idx, string.format("%s \x05YES: %d \x01/ \x03NO: %d \x01/ Total: %d", tag, yes, no, total))
+
+    elseif ename == "vote_passed" then
+        local detail = event:GetString("details") or ""
+        ChatPrintf(idx, string.format("%s \x04PASSED %s", tag, detail))
+
+    elseif ename == "vote_failed" then
+        ChatPrintf(idx, string.format("%s \x03FAILED", tag))
+
+    elseif ename == "vote_ended" then
+        ChatPrintf(idx, string.format("%s \x01ended", tag))
+    end
+end)
+
+print("voteviewerdone")
