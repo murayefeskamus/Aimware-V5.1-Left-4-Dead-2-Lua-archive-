@@ -1,0 +1,32 @@
+local ref = gui.Reference("Visuals", "Other")
+local box = gui.Groupbox(ref, "Haymaker", 325, 315, 300, 0)
+local enable      = gui.Checkbox(box, "hay.enable", "Enable", false)
+local jump_enable = gui.Checkbox(box, "hay.jump", "Jump Haymaker", false)
+
+local IN_JUMP   = 2
+local jump_delay = 0.0001 
+local last_attack = 0
+
+callbacks.Register("CreateMove", "haymaker", function(cmd)
+    if not enable:GetValue() then return end
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then return end
+
+    local ok, zc = pcall(function() return lp:GetPropInt("m_zombieClass") end)
+    if not ok or zc ~= 8 then return end
+    if lp:GetTeamNumber() ~= 3 then return end
+
+    local buttons = cmd:GetButtons()
+    local now     = globals.RealTime()
+
+    if buttons % (524289 * 2) >= 524289 then
+        last_attack = now
+        cmd:SetButtons(buttons + 2048)
+    end
+
+    if jump_enable:GetValue() and last_attack > 0 and (now - last_attack) >= jump_delay then
+        local buttons2 = cmd:GetButtons()
+        cmd:SetButtons(buttons2 + IN_JUMP)
+        last_attack = 0
+    end
+end)
