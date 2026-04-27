@@ -1,0 +1,98 @@
+ -- rageduckbhop and strafer for l4d2
+
+local IN_JUMP = 2
+local IN_DUCK = 4
+local FL_ONGROUND = 1
+local KEY_SPACE = 32
+
+
+local ref = gui.Reference("Misc")
+local tab = gui.Tab(ref, "bhop_strafe.tab", "fuckmeplsss")
+local box = gui.Groupbox(tab, "rage bhop n strafe", 16, 16, 300, 100)
+local bhop_enabled = gui.Checkbox(box, "bhop.enable", "Enable bhop", false)
+gui.Text(box, " ")
+local strafe_enabled = gui.Checkbox(box, "strafe.enable", "Enable strafe", false)
+
+
+local was_ground = false
+local do_jump = false
+
+local function normalize_rad(angle)
+    angle = angle % (2 * math.pi)
+    if angle > math.pi then angle = angle - 2 * math.pi
+    elseif angle < -math.pi then angle = angle + 2 * math.pi end
+    return angle
+end
+
+
+
+callbacks.Register("Draw", "imdumbamk", function()
+    if not bhop_enabled:GetValue() then return end
+    if not input.IsButtonDown(KEY_SPACE) then
+        was_ground = false
+        do_jump = false
+        return
+    end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then return end
+
+    local on_ground = bit.band(lp:GetPropInt("m_fFlags"), FL_ONGROUND) ~= 0
+    local just_landed = on_ground and not was_ground
+
+    if just_landed then
+        do_jump = true
+    end
+
+    was_ground = on_ground
+end)
+
+
+callbacks.Register("CreateMove", "bhopstrafeacxcrıtasdsdofhdsf", function(cmd)
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+    
+    if bhop_enabled:GetValue() then
+        
+        if input.IsButtonDown(KEY_SPACE) then
+            cmd:SetButtons(bit.bor(cmd:GetButtons(), IN_DUCK))
+        end
+
+      
+        if do_jump then
+            cmd:SetButtons(bit.bor(cmd:GetButtons(), IN_JUMP))
+            do_jump = false
+        else
+            cmd:SetButtons(bit.band(cmd:GetButtons(), bit.bnot(IN_JUMP)))
+        end
+    end
+
+    
+    if strafe_enabled:GetValue() then
+        if bit.band(me:GetPropInt("m_fFlags"), FL_ONGROUND) == 0 then
+            local vel = me:GetPropVector("localdata", "m_vecVelocity[0]")
+            if vel then
+                local speed = math.sqrt(vel.x^2 + vel.y^2)
+                if speed > 2 then
+                    local term = 30 / 300 / 250 * 100 / speed
+                    local perfect_delta = 0.0
+                    if term > -1.0 and term < 1.0 then perfect_delta = math.acos(term) end
+
+                    if perfect_delta ~= 0.0 then
+                        local view_angles = cmd:GetViewAngles()
+                        local yaw_rad = math.rad(view_angles.yaw)
+                        local vel_dir = math.atan2(vel.y, vel.x) - yaw_rad
+                        local wish_ang = math.atan2(-cmd:GetSideMove(), cmd:GetForwardMove())
+                        local delta = normalize_rad(vel_dir - wish_ang)
+                        local move_dir = delta < 0.0 and (vel_dir + perfect_delta) or (vel_dir - perfect_delta)
+                        cmd:SetForwardMove(math.cos(move_dir) * 450)
+                        cmd:SetSideMove(-math.sin(move_dir) * 450)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+
+print("ihopeitworkslikecs")
