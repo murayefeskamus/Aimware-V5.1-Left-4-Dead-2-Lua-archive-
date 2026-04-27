@@ -1,0 +1,95 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+local vm_enable = gui.Checkbox(ref, "vm.enable", "Enable Viewmodel Offset", true)
+local vm_x = gui.Slider(ref, "vm.x", "Forward / Back (X)", 0, -50, 50, 0.1)
+local vm_y = gui.Slider(ref, "vm.y", "Right / Left (Y)", 0, -50, 50, 0.1)
+local vm_z = gui.Slider(ref, "vm.z", "Up / Down (Z)", 0, -50, 50, 0.1)
+
+ffi.cdef[[
+    int VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+    void* VirtualAlloc(void* lpAddress, size_t dwSize, uint32_t flAllocationType, uint32_t flProtect);
+    void* memcpy(void* dest, const void* src, size_t n);
+
+    typedef struct {
+        float x;
+        float y;
+        float z;
+    } Vector3D;
+]]
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local MEM_COMMIT = 0x1000
+local MEM_RESERVE = 0x2000
+local HOOK_SIZE = 6
+
+local GC_PROTECT = {
+    trampoline = nil,
+    redirected_fn = nil
+}
+
+local function WriteHook(target_addr, destination_addr)
+    local old_protect = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", target_addr), HOOK_SIZE, PAGE_EXECUTE_READWRITE, old_protect)
+    local ptr = ffi.cast("uint8_t*", target_addr)
+    ptr[0] = 0x68
+    ffi.cast("uint32_t*", ptr + 1)[0] = ffi.cast("uint32_t", ffi.cast("void*", destination_addr))
+    ptr[5] = 0xC3
+    ffi.C.VirtualProtect(ffi.cast("void*", target_addr), HOOK_SIZE, old_protect[0], old_protect)
+end
+
+local function CreateTrampoline(original_fn, bytes_to_copy)
+    local trampoline = ffi.C.VirtualAlloc(nil, 64, MEM_COMMIT + MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+    ffi.C.memcpy(trampoline, ffi.cast("const void*", original_fn), bytes_to_copy)
+    local jmp_pos = ffi.cast("uint8_t*", trampoline) + bytes_to_copy
+    jmp_pos[0] = 0x68
+    ffi.cast("uint32_t*", jmp_pos + 1)[0] = ffi.cast("uint32_t", ffi.cast("uint8_t*", original_fn) + bytes_to_copy)
+    jmp_pos[5] = 0xC3
+    return trampoline
+end
+
+local function AngleVectors(angles)
+    local p, y, r = math.rad(angles.x), math.rad(angles.y), math.rad(angles.z)
+    local sp, cp, sy, cy, sr, cr = math.sin(p), math.cos(p), math.sin(y), math.cos(y), math.sin(r), math.cos(r)
+    return 
+        {x = cp * cy, y = cp * sy, z = -sp},
+        {x = (-1*sr*sp*cy+-1*cr*-sy), y = (-1*sr*sp*sy+-1*cr*cy), z = -1*sr*cp},
+        {x = (cr*sp*cy+-sr*-sy), y = (cr*sp*sy+-sr*cy), z = cr*cp}
+end
+
+local calc_vm_addr = mem.FindPattern("client.dll", "55 8B EC 83 EC 48 A1 ?? ?? ?? ?? 33 C5 89 45 FC 8B 45 10 8B 10")
+local calc_vm_t = ffi.typeof("void(__thiscall*)(void*, void*, Vector3D*, Vector3D*)")
+local Original_CalcViewModelView = nil
+
+local function Hooked_CalcViewModelView(ecx, owner, eyePosition, eyeAngles)
+    if Original_CalcViewModelView == nil then return end
+
+    if vm_enable:GetValue() then
+        local fake_eyePosition = ffi.new("Vector3D")
+        
+        local fwd, right, up = AngleVectors(eyeAngles)
+        local ox, oy, oz = vm_x:GetValue(), vm_y:GetValue(), vm_z:GetValue()
+
+        fake_eyePosition.x = eyePosition.x + (fwd.x * ox) + (right.x * oy) + (up.x * oz)
+        fake_eyePosition.y = eyePosition.y + (fwd.y * ox) + (right.y * oy) + (up.y * oz)
+        fake_eyePosition.z = eyePosition.z + (fwd.z * ox) + (right.z * oy) + (up.z * oz)
+
+        ffi.cast(calc_vm_t, Original_CalcViewModelView)(ecx, owner, fake_eyePosition, eyeAngles)
+    else
+        ffi.cast(calc_vm_t, Original_CalcViewModelView)(ecx, owner, eyePosition, eyeAngles)
+    end
+end
+
+if calc_vm_addr then
+    GC_PROTECT.redirected_fn = ffi.cast(calc_vm_t, Hooked_CalcViewModelView)
+    Original_CalcViewModelView = CreateTrampoline(calc_vm_addr, 6)
+    GC_PROTECT.trampoline = Original_CalcViewModelView
+    WriteHook(calc_vm_addr, GC_PROTECT.redirected_fn)
+end
+
+callbacks.Register("Unload", function()
+    if calc_vm_addr and GC_PROTECT.trampoline then
+        local old_protect = ffi.new("uint32_t[1]")
+        ffi.C.VirtualProtect(ffi.cast("void*", calc_vm_addr), HOOK_SIZE, PAGE_EXECUTE_READWRITE, old_protect)
+        ffi.C.memcpy(ffi.cast("void*", calc_vm_addr), GC_PROTECT.trampoline, HOOK_SIZE)
+        ffi.C.VirtualProtect(ffi.cast("void*", calc_vm_addr), HOOK_SIZE, old_protect[0], old_protect)
+    end
+end)
