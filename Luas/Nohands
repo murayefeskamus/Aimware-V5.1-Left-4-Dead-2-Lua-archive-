@@ -1,0 +1,55 @@
+It ll be crash when u return main menu DONT USE THIS. Im just sharin cuz why not. (Use local hand chams alpha zero instead of this its same shit at all)
+
+
+pcall(function()
+    ffi.cdef[[
+        int VirtualProtect(void* lpAddress, size_t dwSize, 
+                          uint32_t flNewProtect, uint32_t* lpflOldProtect);
+    ]]
+end)
+
+local k32 = ffi.load("kernel32")
+local PAGE_EXECUTE_READWRITE = 0x40
+
+local function purna()
+    local addr = mem.FindPattern("client.dll", "55 8B EC 8B 55 08 56 8B 75 0C 57")
+    if addr == nil then
+        print("sig null")
+        return
+    end
+
+    local iaddr = tonumber(ffi.cast("uintptr_t", addr)) or 0
+    print(string.format("func: 0x%X", iaddr))
+
+    -- +0x16 = cmp eax,ecx | +0x18 = jne
+    local ptr = ffi.cast("uint8_t*", addr + 0x18)
+
+   
+    if ptr[0] == 0x90 and ptr[1] == 0x90 then
+        print("[Revealer] Zaten patch'li.")
+        return
+    end
+
+   
+    if ptr[0] ~= 0x75 or ptr[1] ~= 0x08 then
+        print(string.format("bytes: %02X %02X", ptr[0], ptr[1]))
+        return
+    end
+
+    local ok, err = pcall(function()
+        local old = ffi.new("uint32_t[1]")
+        k32.VirtualProtect(ptr, 2, PAGE_EXECUTE_READWRITE, old)
+        ptr[0] = 0x90
+        ptr[1] = 0x90
+        k32.VirtualProtect(ptr, 2, old[0], old)
+    end)
+
+    if ok then
+        print("patch done")
+    else
+        print("pııırrrtt: " .. tostring(err))
+    end
+end
+
+purna()
+print("Nohandsloaded")
