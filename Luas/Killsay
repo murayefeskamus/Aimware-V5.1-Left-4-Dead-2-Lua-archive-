@@ -1,0 +1,95 @@
+--Killsay shi
+
+local ref = gui.Reference("Misc")
+local tab = gui.Tab(ref, "killsay.tab", "Killsay")
+local box = gui.Groupbox(tab, "Killsay", 16, 16, 400, 0)
+
+local enable   = gui.Checkbox(box, "ks.enable",   "Enable Killsay",       false)
+local team_say = gui.Checkbox(box, "ks.teamsay",  "Team Chat (say_team)", false)
+local cooldown = gui.Slider(box,   "ks.cooldown", "Cooldown (sn)",        3, 0, 30)
+
+gui.Text(box, " ")
+gui.Text(box, "-- Msg List --")
+gui.Text(box, " ")
+
+local msg_boxes = {}
+local defaults  = { "1", "owned", "get rekt", "bb", "soktu", "skill diff", "xd", "ez" }
+
+for i = 1, 8 do
+    local eb = gui.Editbox(box, "ks.msg" .. i, "Mesaj " .. i)
+    eb:SetValue(defaults[i])
+    table.insert(msg_boxes, eb)
+end
+
+gui.Text(box, " ")
+gui.Text(box, "Bos birakilan mesajlar listeden cikar.")
+
+local lastKillTime = 0
+local my_userID    = nil
+
+client.AllowListener("player_death")
+
+local function GetMyUserID()
+    local me = entities.GetLocalPlayer()
+    if not me then return nil end
+    local info = client.GetPlayerInfo(me:GetIndex())
+    if not info then return nil end
+    return info.userID
+end
+
+local function GetMessages()
+    local list = {}
+    for _, eb in ipairs(msg_boxes) do
+        local val = eb:GetValue()
+        if val and val ~= "" then
+            table.insert(list, val)
+        end
+    end
+    return list
+end
+
+local function IsSpecialInfected(ent)
+    if not ent then return false end
+    local zclass = ent:GetPropInt("m_zombieClass") or 0
+    return zclass >= 1 and zclass ~= 7
+end
+
+callbacks.Register("FireGameEvent", "killsay_event", function(event)
+    if not enable:GetValue() then return end
+    if event:GetName() ~= "player_death" then return end
+
+    local attackerID = event:GetInt("attacker")
+    local victimID   = event:GetInt("userid")
+    if attackerID == 0 then return end
+    if attackerID == victimID then return end
+
+    if not my_userID then
+        my_userID = GetMyUserID()
+    end
+    if not my_userID then return end
+    if attackerID ~= my_userID then return end
+
+    local victimIdx = client.GetPlayerIndexByUserID(victimID)
+    local victim    = entities.GetByIndex(victimIdx)
+
+    local now = globals.RealTime()
+    if now - lastKillTime < cooldown:GetValue() then return end
+    lastKillTime = now
+
+    local msgs = GetMessages()
+    if #msgs == 0 then return end
+
+    math.randomseed(globals.TickCount())
+    local chosen = msgs[math.random(1, #msgs)]
+
+    if team_say:GetValue() then
+        client.ChatTeamSay(chosen)
+    else
+        client.ChatSay(chosen)
+    end
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("FireGameEvent", "killsay_event")
+    my_userID = nil
+end)
