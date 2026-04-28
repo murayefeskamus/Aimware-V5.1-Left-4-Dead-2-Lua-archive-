@@ -1,0 +1,70 @@
+Wont work in big 2026 bois. Its old feature 
+
+
+
+local menu_ref = gui.Reference("MISC", "GENERAL", "Main")
+local enable_check = gui.Checkbox(menu_ref, "lua_capture_lag", "Server Crasher", false)
+enable_check:SetDescription("amına koyayım apo.")
+
+local is_grabbing_event = false 
+local was_captured = false     
+
+local function OnCapture()
+    print("fucked.")
+end
+
+callbacks.Register("FireGameEvent", "capture_events", function(event)
+    if not enable_check:GetValue() then return end
+    
+    local local_player = entities.GetLocalPlayer()
+    if not local_player then return end
+
+    local event_name = event:GetName()
+    local local_index = local_player:GetIndex()
+    local attacker_index = entities.GetByUserID(event:GetInt("userid")):GetIndex()
+
+    if attacker_index == local_index then
+        if event_name == "jockey_ride" or event_name == "charger_pummel_start" or event_name == "charger_carry_start" then
+            is_grabbing_event = true
+        elseif event_name == "jockey_ride_end" or event_name == "charger_pummel_end" or event_name == "charger_carry_end" then
+            is_grabbing_event = false
+        end
+    end
+end)
+
+callbacks.Register("CreateMove", "capture_logic_cm", function(cmd)
+    if not enable_check:GetValue() then 
+        is_grabbing_event = false 
+        return 
+    end
+    
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then 
+        is_grabbing_event = false
+        return 
+    end
+
+    local jockey_victim = lp:GetPropEntity("DT_TerrorPlayer", "m_jockeyVictim")
+    local charger_pummel = lp:GetPropEntity("DT_TerrorPlayer", "m_pummelVictim")
+    local charger_carry = lp:GetPropEntity("DT_TerrorPlayer", "m_carryVictim")
+
+    local is_currently_grabbing = is_grabbing_event or (jockey_victim ~= nil) or (charger_pummel ~= nil) or (charger_carry ~= nil)
+
+    if is_currently_grabbing and not was_captured then
+        OnCapture()
+    end
+
+    if is_currently_grabbing then
+        engine.AddOutSeqNr(10000) --XDXDXDAXAXA
+        cmd:SetSendPacket(true) --XDFXDXDXDXD
+    end
+
+    was_captured = is_currently_grabbing
+end)
+
+callbacks.Register("Draw", function()
+    if not entities.GetLocalPlayer() or not entities.GetLocalPlayer():IsAlive() then
+        is_grabbing_event = false
+        was_captured = false
+    end
+end)
