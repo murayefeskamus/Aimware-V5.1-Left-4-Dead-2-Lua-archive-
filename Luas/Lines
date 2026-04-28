@@ -1,0 +1,108 @@
+local ref = gui.Reference("Visuals", "World")
+local box = gui.Groupbox(ref, "Distance Lines PRO", 320, 350, 305, 0)
+
+local enable = gui.Checkbox(box, "dist.lines.enable5", "Enable Distance Lines", false)
+local from_crosshair = gui.Checkbox(box, "dist.lines.crosshair5", "Draw From Crosshair", true)
+local from_bottom_screen = gui.Checkbox(box, "dist.lines.screenbottom5", "Draw From Screen Bottom", false)
+local show_distance = gui.Checkbox(box, "dist.lines.text5", "Show Distance Text", true)
+local colorpicker = gui.ColorPicker(box, "dist.lines.color5", "Line Color", 255, 0, 0, 200)
+
+local font = draw.CreateFont("Tahoma", 14)
+
+local function SafeGetProp(ent, prop)
+    local ok, val = pcall(function() return ent:GetProp(prop) end)
+    if not ok then return nil end
+    return val
+end
+
+local function IsGhost(ent)
+    local g = SafeGetProp(ent, "m_isGhost")
+    return (g == 1 or g == true)
+end
+
+local function IsDormantSafe(ent)
+    local ok, val = pcall(function() return ent:IsDormant() end)
+    if not ok then return false end
+    return val == true
+end
+
+local function GetPlayers()
+    local p = entities.FindByClass("CTerrorPlayer")
+    if not p or #p == 0 then
+        p = entities.FindByClass("CCSPlayer")
+    end
+    return p
+end
+
+callbacks.Register("Draw", function()
+    if not enable:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local myTeam = me:GetTeamNumber()
+    local myPos = me:GetAbsOrigin()
+
+    local screen_w, screen_h = draw.GetScreenSize()
+    local start_x, start_y = screen_w / 2, screen_h / 2
+
+    if from_bottom_screen:GetValue() then
+        start_x = screen_w / 2
+        start_y = screen_h - 1
+    elseif from_crosshair:GetValue() then
+        start_x = screen_w / 2
+        start_y = screen_h / 2
+    end
+
+    local r, g, b, a = colorpicker:GetValue()
+
+    local players = GetPlayers()
+    if not players then return end
+
+    draw.SetFont(font)
+
+    local closestDist = 999999
+
+    for _, player in pairs(players) do
+        if player ~= me and player:IsAlive() and not IsDormantSafe(player) then
+
+            local tTeam = player:GetTeamNumber()
+            if myTeam == 2 then
+                if tTeam ~= 3 then goto continue end
+                if IsGhost(player) then goto continue end
+            end
+            if myTeam == 3 then
+                if tTeam ~= 2 then goto continue end
+            end
+
+            local pos = player:GetAbsOrigin() + Vector3(0,0,60)
+            local dist_units = (pos - myPos):Length()
+            local dist_meters = math.floor(dist_units * 0.01905)
+
+            if dist_meters < closestDist then
+                closestDist = dist_meters
+            end
+
+            local sx, sy = client.WorldToScreen(pos)
+            if sx and sy then
+                draw.Color(r, g, b, a)
+                draw.Line(start_x, start_y, sx, sy)
+
+                if show_distance:GetValue() then
+                    draw.Color(255,255,255,255)
+                    draw.Text(sx - 10, sy - 15, dist_meters .. "m")
+                end
+            end
+        end
+        ::continue::
+    end
+
+    if closestDist ~= 999999 then
+        draw.Color(0,0,0,150)
+        draw.FilledRect(screen_w - 140, 20, screen_w - 20, 60)
+        draw.Color(255,255,255,255)
+        draw.Text(screen_w - 130, 30, "Closest Target:")
+        draw.Text(screen_w - 130, 45, closestDist .. "m")
+    end
+
+end)
