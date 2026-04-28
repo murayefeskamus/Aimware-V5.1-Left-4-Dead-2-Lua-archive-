@@ -73,9 +73,9 @@ callbacks.Register("Draw", "ladder_esp", function()
             end
 
             L(1,2) L(2,3) L(3,4) L(4,1)
-            -- Üst dörtgen
+     
             L(5,6) L(6,7) L(7,8) L(8,5)
-            -- Dikey kenarlar
+
             L(1,5) L(2,6) L(3,7) L(4,8)
         end
 
