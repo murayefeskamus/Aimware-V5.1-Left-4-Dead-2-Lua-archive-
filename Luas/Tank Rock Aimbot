@@ -1,0 +1,133 @@
+for T1 weapons btw. Can use rage cuz there s no aimbot detection for tank rock killed event lol SMAC n LILAC so ez to bypass u can literally shoot tank with ur ragebot or can autoceil or 
+even tank rock aimbot etc.. so many aim shit it undetect just use that 
+
+
+
+--Tank Rock Aimbot for Zm
+
+local ref = gui.Reference("Misc")
+local tab = gui.Tab(ref, "rock.tab", "Rock Aimbot")
+
+local box = gui.Groupbox(tab, "Aimbot", 10, 10, 300, 160)
+
+local enable = gui.Checkbox(box, "rock.enable", "Enable", true)
+
+local rage   = gui.Checkbox(box, "rock.rage", "Rage Mode", false)
+
+local fov_sl = gui.Slider(box, "rock.fov", "FOV", 60, 1, 180)
+local smooth = gui.Slider(box, "rock.smooth", "Smooth", 12, 1, 50)
+
+
+local function NormalizeYaw(y)
+    while y > 180 do y = y - 360 end
+    while y < -180 do y = y + 360 end
+    return y
+end
+
+local function CalcAngle(src, dst)
+    local delta = dst - src
+    local hyp = math.sqrt(delta.x * delta.x + delta.y * delta.y)
+
+    local pitch = math.deg(math.atan2(-delta.z, hyp))
+    local yaw   = math.deg(math.atan2(delta.y, delta.x))
+
+    return pitch, yaw
+end
+
+local function GetFov(view, target)
+    local dy = NormalizeYaw(target.y - view.y)
+    local dx = target.x - view.x
+    return math.sqrt(dx*dx + dy*dy)
+end
+
+
+local function GetRock()
+
+    local tank = nil
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    for i = 1, #players do
+        local p = players[i]
+        if p:GetPropInt("m_zombieClass") == 8 then
+            tank = p
+            break
+        end
+    end
+
+    if not tank then return nil end
+
+    local tankPos = tank:GetAbsOrigin()
+
+    local best = nil
+    local bestDist = 99999
+
+    for i = 1, 2048 do
+        local ent = entities.GetByIndex(i)
+
+        if ent and ent:GetClass() == "CBaseCSGrenadeProjectile" then
+            local pos = ent:GetAbsOrigin()
+            local dist = (pos - tankPos):Length()
+
+            if dist < bestDist then
+                bestDist = dist
+                best = ent
+            end
+        end
+    end
+
+    return best
+end
+
+
+callbacks.Register("CreateMove", "rock_aimbot", function(cmd)
+
+    if not enable:GetValue() then return end
+
+    if not input.IsButtonDown(1) then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local rock = GetRock()
+    if not rock then return end
+
+    local myPos = me:GetAbsOrigin()
+    local rockPos = rock:GetAbsOrigin()
+
+    local offset = 45
+
+    local ok, vel = pcall(function()
+        return rock:GetPropVector("m_vecVelocity")
+    end)
+
+    if ok and vel then
+        local speed = vel:Length()
+        offset = 35 + (speed / 40)
+    end
+
+    rockPos.z = rockPos.z - offset
+
+    local pitch, yaw = CalcAngle(myPos, rockPos)
+    local view = cmd:GetViewAngles()
+
+    local target = {x = pitch, y = yaw}
+    local fov = GetFov(view, target)
+
+    if fov > fov_sl:GetValue() then return end
+
+    if rage:GetValue() then
+        engine.SetViewAngles(EulerAngles(pitch, yaw, 0))
+        return
+    end
+
+    local s = smooth:GetValue()
+
+    local deltaX = pitch - view.x
+    local deltaY = NormalizeYaw(yaw - view.y)
+
+    local newX = view.x + deltaX / s
+    local newY = view.y + deltaY / s
+
+    engine.SetViewAngles(EulerAngles(newX, newY, 0))
+
+end)
