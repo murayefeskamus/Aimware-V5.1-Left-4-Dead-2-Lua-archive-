@@ -1,0 +1,34 @@
+Its not true unhook. just disable all master toggles
+
+
+local GLOBAL_EXECUTION_GATE = true
+local menu = gui.Tab(gui.Reference("SETTINGS"), "myTab", "Aimware")
+local panicEnabled = gui.Checkbox(menu, "panicEnabled", "ES", false)
+
+local lastPanicState = false
+callbacks.Register("Draw", function()
+    local newPanicState = panicEnabled:GetValue()
+    if newPanicState ~= lastPanicState then
+        GLOBAL_EXECUTION_GATE = not newPanicState
+        
+        gui.SetValue("esp.master", GLOBAL_EXECUTION_GATE)
+        gui.SetValue("lbot.master", GLOBAL_EXECUTION_GATE)
+        gui.SetValue("misc.master", GLOBAL_EXECUTION_GATE)
+        gui.SetValue("rbot.master", GLOBAL_EXECUTION_GATE)
+
+        if GLOBAL_EXECUTION_GATE then
+            gui.SetValue("lbot.master", true)
+            gui.SetValue("rbot.master", false)
+        end
+        
+        lastPanicState = newPanicState
+    end
+end)
+
+callbacks.Register("Draw", function()
+    if not GLOBAL_EXECUTION_GATE then return end
+end)
+
+callbacks.Register("CreateMove", function()
+    if not GLOBAL_EXECUTION_GATE then return end
+end)
