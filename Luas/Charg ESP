@@ -1,0 +1,195 @@
+FOR ZONEMODE. Another static timer just like boomer vomit esp crash protect also doesnt work on pubs 
+try to read this instead of ma lua 
+
+// DT_Charge
+NETVAR(DataTable, baseclass, "DT_Charge", "baseclass") // 0x0
+NETVAR(int, m_isCharging, "DT_Charge", "m_isCharging") // 0x65C
+NETVAR(float, m_chargeStartTime, "DT_Charge", "m_chargeStartTime") // 0x658
+NETVAR(int, m_hPotentialTarget, "DT_Charge", "m_hPotentialTarget") // 0x660
+
+
+
+local ref    = gui.Reference("Visuals", "World")
+local gb     = gui.Groupbox(ref, "Charger ESP", 325, 315, 300, 0)
+
+local enable = gui.Checkbox(gb, "chg.enable",   "Enable",           false)
+local show_path = gui.Checkbox(gb, "chg.path",  "Charge Path",      true)
+local show_cd   = gui.Checkbox(gb, "chg.cd",    "Cooldown Bar",     true)
+local show_tgt  = gui.Checkbox(gb, "chg.tgt",   "Show Target",      true)
+
+local col    = gui.ColorPicker(gb, "chg.col",   "Color", 255, 120, 0, 255)
+local font   = draw.CreateFont("Tahoma", 12, 700)
+
+local CHARGE_DURATION = 3.0
+local COOLDOWN_TIME   = 12.2
+
+local charge_cache = {} -- idx → { was_charging, end_pos }
+local cd_cache     = {}
+
+local function T(x, y, t, r, g, b)
+    draw.SetFont(font)
+    draw.Color(0,0,0,200) draw.Text(x+1,y+1,t)
+    draw.Color(r,g,b,255) draw.Text(x,y,t)
+end
+
+local function DrawLine3D(p1, p2, r, g, b, a)
+    local sx1, sy1 = client.WorldToScreen(p1)
+    local sx2, sy2 = client.WorldToScreen(p2)
+    if not sx1 or not sx2 then return end
+    draw.Color(0,0,0,math.floor(a*0.4)) draw.Line(sx1+1,sy1+1,sx2+1,sy2+1)
+    draw.Color(r,g,b,a) draw.Line(sx1,sy1,sx2,sy2)
+end
+
+local function DrawCircle3D(origin, radius, r, g, b, a)
+    local px, py = nil, nil
+    for i = 0, 32 do
+        local ang = (i/32) * math.pi * 2
+        local wx = origin.x + math.cos(ang) * radius
+        local wy = origin.y + math.sin(ang) * radius
+        local sx, sy = client.WorldToScreen(Vector3(wx, wy, origin.z + 5))
+        if sx and sy then
+            if px then
+                draw.Color(r,g,b,a)
+                draw.Line(px,py,sx,sy)
+            end
+            px, py = sx, sy
+        end
+    end
+end
+
+callbacks.Register("Draw", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+
+    local now = globals.CurTime()
+    local r,g,b,a = col:GetValue()
+    local lp_pos = lp:GetAbsOrigin()
+
+    for _, ent in pairs(entities.FindByClass("CTerrorPlayer") or {}) do
+        if not ent:IsAlive() or ent:IsDormant() then goto skip end
+        if ent:GetTeamNumber() ~= 3 then goto skip end
+        if (ent:GetPropInt("m_zombieClass") or 0) ~= 6 then goto skip end
+
+        local idx = ent:GetIndex()
+        local pos = ent:GetAbsOrigin()
+        if not pos then goto skip end
+
+        local sx, sy = client.WorldToScreen(pos + Vector3(0,0,80))
+
+        local vx = ent:GetPropFloat("localdata", "m_vecVelocity[0]") or 0
+        local vy = ent:GetPropFloat("localdata", "m_vecVelocity[1]") or 0
+        local spd = math.sqrt(vx*vx + vy*vy)
+
+        local isCharging = spd > 300
+        local wasCharging = charge_cache[idx] and charge_cache[idx].was_charging or false
+
+        if not charge_cache[idx] then
+            charge_cache[idx] = {}
+        end
+
+        if isCharging then
+            charge_cache[idx].was_charging = true
+
+            if not charge_cache[idx].end_pos then
+                if spd > 0 then
+                    local dir_x = vx / spd
+                    local dir_y = vy / spd
+
+                   local CHARGE_MULTIPLIER = 1.25
+                   local max_dist = spd * CHARGE_DURATION * CHARGE_MULTIPLIER
+
+                    local start_pos = pos + Vector3(0,0,40)
+                    local max_end = Vector3(
+                        pos.x + dir_x * max_dist,
+                        pos.y + dir_y * max_dist,
+                        pos.z + 40
+                    )
+
+                    local tr = engine.TraceLine(start_pos, max_end, 0x46004003)
+
+                    local dist = max_dist
+                    if tr and tr.fraction < 1 then
+                        dist = max_dist * tr.fraction
+                    end
+
+                    charge_cache[idx].end_pos = Vector3(
+                        pos.x + dir_x * dist,
+                        pos.y + dir_y * dist,
+                        pos.z
+                    )
+                end
+            end
+
+            local end_pos = charge_cache[idx].end_pos
+
+            if end_pos and show_path:GetValue() then
+                DrawLine3D(pos + Vector3(0,0,40), end_pos + Vector3(0,0,40), 255,50,50,220)
+                DrawCircle3D(end_pos, 40, 255,50,50,150)
+
+                local ex, ey = client.WorldToScreen(end_pos + Vector3(0,0,40))
+                if ex and ey then
+                    draw.Color(255,50,50,200)
+                    draw.FilledCircle(ex,ey,5)
+
+                    local d = (end_pos - pos):Length()
+                    T(ex-15, ey-16, string.format("%.0fm", d*0.01905), 255,50,50)
+                end
+            end
+
+            if sx and sy then
+                T(sx-25, sy-30, "CHARGING", 255,50,50)
+            end
+
+        else
+            if wasCharging then
+                cd_cache[idx] = now + COOLDOWN_TIME
+            end
+
+            charge_cache[idx].was_charging = false
+            charge_cache[idx].end_pos = nil
+
+            if show_cd:GetValue() and sx and sy then
+                local cd_end = cd_cache[idx] or 0
+                local cd_remain = math.max(0, cd_end - now)
+                local ratio = cd_remain / COOLDOWN_TIME
+
+                local barW, barH = 70, 6
+                local bx = sx - barW/2
+                local by = sy + 4
+
+                draw.Color(0,0,0,160)
+                draw.FilledRect(bx,by,bx+barW,by+barH)
+
+                local cr = math.floor(255 * math.min(1, ratio*2))
+                local cg = math.floor(255 * math.min(1, (1-ratio)*2))
+
+                draw.Color(cr,cg,0,200)
+                draw.FilledRect(bx,by,bx + math.floor(barW*ratio),by+barH)
+
+                draw.Color(0,0,0,180)
+                draw.OutlinedRect(bx,by,bx+barW,by+barH)
+
+                if cd_remain <= 0 then
+                    T(sx-18, by-14, "READY", 50,255,50)
+                else
+                    T(sx-15, by-14, string.format("%.1fs", cd_remain), cr,cg,0)
+                end
+            end
+        end
+
+        if sx and sy then
+            local dist = (pos - lp_pos):Length() * 0.01905
+
+            local textY = sy + 14
+            if show_cd:GetValue() then
+                textY = sy + 22
+            end
+
+            T(sx-30, textY, string.format("Charger %.0fm", dist), r,g,b)
+        end
+
+        ::skip::
+    end
+end)
