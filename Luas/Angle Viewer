@@ -1,0 +1,18 @@
+local font = draw.CreateFont("Tahoma", 14, 700)
+
+callbacks.Register("Draw", "angle_viewer", function()
+    local ang = engine.GetViewAngles()
+    if not ang then return end
+
+    local lp = entities.GetLocalPlayer()
+    local mt = lp and lp:GetPropInt("movetype") or 0
+
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(11, 11, string.format("pitch: %.2f  yaw: %.2f  roll: %.2f", ang.x, ang.y, ang.z))
+    draw.Text(11, 28, string.format("movetype: %d", mt))
+    draw.Color(255, 255, 0, 255)
+    draw.Text(10, 10, string.format("pitch: %.2f  yaw: %.2f  roll: %.2f", ang.x, ang.y, ang.z))
+    draw.Color(200, 200, 200, 255)
+    draw.Text(10, 27, string.format("movetype: %d", mt))
+end)
