@@ -1,5 +1,6 @@
 # Aimware V5.1 Left 4 Dead 2 Lua archive 
-all of them created by me feel free to use bbgs
+all of them created by me feel free to use bbgs. A lua and Config archive by Murayefeskamus aka murayefeskamus1 aka manga aka morpheus aka ffi.cdef aka AddOutSeqNr aka neither 
+aka Ring 0 aka celestial aka pubstar aka goat of legit cheating aka master of ragers aka CL Move warrior 
 
 
 V6 will release but i thought i can update cheat with FFI goat so i tried all api call crashes or sum Access Violation (impossible) shits. U can use them freely 
