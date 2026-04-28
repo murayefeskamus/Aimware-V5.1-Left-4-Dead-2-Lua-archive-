@@ -1,0 +1,28 @@
+use it with turns
+
+
+
+local is_carrying = false
+local SIKIS = 2000
+
+callbacks.Register("FireGameEvent", "Charger_Carry_Monitor", function(event)
+    local name = event:GetName()
+
+    local userid = event:GetInt("userid")
+    local player = client.GetPlayerByUserID(userid)
+    if player ~= client.GetLocalPlayer() then return end
+
+    if name == "charger_carry_start" then
+        is_carrying = true
+
+    elseif name == "charger_carry_end" or name == "charger_impact" or name == "player_death" or name == "player_first_spawn" then
+        is_carrying = false
+    end
+end)
+
+callbacks.Register("CreateMove", "Charger_Lag_Loop", function(cmd)
+    if is_carrying then
+        engine.AddOutSeqNr(SIKIS)
+        cmd:SetSendPacket(true)
+    end
+end)
