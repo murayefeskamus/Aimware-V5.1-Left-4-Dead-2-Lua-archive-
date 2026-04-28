@@ -1,0 +1,98 @@
+another legit sheet just nvm shootin after reload is pretty detectable in my zm cfg. so this is the resolver
+
+-- AimassistChromeandPump for records
+
+local wasM2HoldPressed = false
+local aimbotWasDisabledByHold = false
+
+local wasRPressed = false
+local wasM1Pressed = false
+local wasM2SequencePressed = false
+local aimbotWasDisabledByR = false
+local lastM1PressTime = 0
+local sequenceTimeout = 0.4 -- M1 ve M2 arasındaki saniye
+
+local function isAimbotEnabled()
+    if not gui or not gui.GetValue then return false end
+    local rbotActive = (gui.GetValue("rbot.master") and gui.GetValue("rbot.enable"))
+    local lbotActive = (gui.GetValue("lbot.master") and gui.GetValue("lbot.aim.enable"))
+    return rbotActive or lbotActive
+end
+
+local function setAimbot(enable)
+    if not gui or not gui.SetValue then return end
+    if gui.GetValue("rbot.master") then gui.SetValue("rbot.enable", enable and 1 or 0) end
+    if gui.GetValue("lbot.master") then gui.SetValue("lbot.aim.enable", enable and 1 or 0) end
+end
+
+local function hasButton(buttons, flag)
+    return (buttons % (flag * 2)) >= flag
+end
+
+local ref = gui.Reference("MISC")
+local tab = gui.Tab(ref, "aimbot_suite", "Aimbot Suite")
+local box = gui.Groupbox(tab, "Aimbot Kontrolcüsü", 16, 16, 320, 240)
+
+local menu = {
+    enable_hold = gui.Checkbox(box, "as_enable_hold", "purna: M2 Basılı Tut Kapat", true),
+    enable_toggle = gui.Checkbox(box, "as_enable_toggle", "purni: R Kapat / M1->M2 Aç", true),
+}
+
+
+callbacks.Register("CreateMove", function(cmd)
+    local localPlayer = entities.GetLocalPlayer()
+    if not localPlayer or not localPlayer:IsAlive() then return end
+
+    local buttons = cmd:GetButtons()
+    local rPressed = input.IsButtonDown(82) 
+    local m1Pressed = hasButton(buttons, 1)    
+    local m2Pressed = hasButton(buttons, 2048) 
+
+    if menu.enable_hold:GetValue() then
+        if m2Pressed and not wasM2HoldPressed then
+            if isAimbotEnabled() then
+                setAimbot(false)
+                aimbotWasDisabledByHold = true
+            end
+        end
+
+        if not m2Pressed and wasM2HoldPressed then
+            if aimbotWasDisabledByHold then
+                setAimbot(true)
+                aimbotWasDisabledByHold = false
+            end
+        end
+        wasM2HoldPressed = m2Pressed
+    end
+
+    if menu.enable_toggle:GetValue() then
+        if rPressed and not wasRPressed then
+            if isAimbotEnabled() then
+                setAimbot(false)
+                aimbotWasDisabledByR = true
+            end
+        end
+
+        if m1Pressed and not wasM1Pressed then
+            lastM1PressTime = globals.RealTime()
+        end
+
+        if m2Pressed and not wasM2SequencePressed then
+            if (globals.RealTime() - lastM1PressTime) <= sequenceTimeout then
+                setAimbot(true)
+                aimbotWasDisabledByR = false 
+                lastM1PressTime = 0
+            end
+        end
+    end
+
+    wasRPressed = rPressed
+    wasM1Pressed = m1Pressed
+    wasM2SequencePressed = m2Pressed
+end)
+
+callbacks.Register("Unload", function()
+    if aimbotWasDisabledByHold or aimbotWasDisabledByR then
+        setAimbot(true)
+    end
+end)
