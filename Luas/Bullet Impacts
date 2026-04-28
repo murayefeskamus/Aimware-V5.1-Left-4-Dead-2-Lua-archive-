@@ -1,0 +1,90 @@
+--Bullet impact
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Bullet Impact", 320, 20, 300, 0)
+
+local enable     = gui.Checkbox(gb, "impact.enable",    "Enable Impact Marker", true)
+local show_self  = gui.Checkbox(gb, "impact.self",      "Show Own",             true)
+local show_team  = gui.Checkbox(gb, "impact.team",      "Show Team",            true)
+local show_enemy = gui.Checkbox(gb, "impact.enemy",     "Show Enemy",           true)
+local duration   = gui.Slider(gb,   "impact.duration",  "Duration (x0.1s)",     10, 1, 50)
+local ring_size  = gui.Slider(gb,   "impact.size",      "Ring Size",            8,  2, 30)
+local self_col   = gui.ColorPicker(gb, "impact.selfcol",  "Own Color",    255, 255,   0, 255)
+local team_col   = gui.ColorPicker(gb, "impact.teamcol",  "Team Color",   100, 255, 100, 255)
+local enemy_col  = gui.ColorPicker(gb, "impact.enemycol", "Enemy Color",  255, 100, 100, 255)
+
+local impacts = {}
+
+client.AllowListener("bullet_impact")
+
+callbacks.Register("FireGameEvent", "impact_event", function(event)
+    if not enable:GetValue() then return end
+    if event:GetName() ~= "bullet_impact" then return end
+
+    local userid = event:GetInt("userid")
+    local ix     = event:GetFloat("x")
+    local iy     = event:GetFloat("y")
+    local iz     = event:GetFloat("z")
+
+    local idx    = client.GetPlayerIndexByUserID(userid)
+    local player = entities.GetByIndex(idx)
+    if not player then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+
+    local is_self = (player:GetIndex() == me:GetIndex())
+    local is_team = (player:GetTeamNumber() == me:GetTeamNumber())
+
+    if is_self and not show_self:GetValue() then return end
+    if not is_self and is_team and not show_team:GetValue() then return end
+    if not is_team and not show_enemy:GetValue() then return end
+
+    local dur = duration:GetValue() * 0.1
+
+    table.insert(impacts, {
+        pos     = Vector3(ix, iy, iz),
+        until_  = globals.RealTime() + dur,
+        dur     = dur,
+        is_self = is_self,
+        is_team = is_team,
+    })
+end)
+
+callbacks.Register("Draw", "impact_draw", function()
+    if not enable:GetValue() then return end
+
+    local now  = globals.RealTime()
+    local size = ring_size:GetValue()
+    local i    = 1
+
+    while i <= #impacts do
+        local imp = impacts[i]
+
+        if now > imp.until_ then
+            table.remove(impacts, i)
+        else
+            local sx, sy = client.WorldToScreen(imp.pos)
+            if sx and sy then
+                local alpha = math.floor(((imp.until_ - now) / imp.dur) * 255)
+                alpha = math.max(0, math.min(255, alpha))
+
+                local r, g, b
+                if imp.is_self then
+                    r, g, b, _ = self_col:GetValue()
+                elseif imp.is_team then
+                    r, g, b, _ = team_col:GetValue()
+                else
+                    r, g, b, _ = enemy_col:GetValue()
+                end
+
+                draw.Color(0, 0, 0, math.floor(alpha * 0.5))
+                draw.OutlinedCircle(sx+1, sy+1, size+1)
+                draw.Color(r, g, b, alpha)
+                draw.OutlinedCircle(sx, sy, size)
+                draw.FilledCircle(sx, sy, 2)
+            end
+            i = i + 1
+        end
+    end
+end)
