@@ -1,0 +1,20 @@
+basic 1v1 lua that nobody can catch u with this XDXDXD
+
+
+
+
+-- Anti Hunter with speedhack
+local LAG_VALUE = 1350
+local SPEEDHACK_AMOUNT = 2
+
+gui.SetValue("misc.speedhack.enable", true)
+gui.SetValue("misc.speedhack.amount", SPEEDHACK_AMOUNT)
+
+callbacks.Register("CreateMove", "Custom_Lag_Exploit", function(cmd)
+    engine.AddOutSeqNr(LAG_VALUE)
+    cmd:SetSendPacket(true)
+end)
+
+callbacks.Register("Unload", function()
+    gui.SetValue("misc.speedhack.enable", false)
+end)
