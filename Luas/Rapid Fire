@@ -1,0 +1,206 @@
+Warning: It is bad shit for ur pc. I got Blue Screened with this for first time cuz of this shit  HOOK_SIZE     = 6  
+                                                                                                  BYTES_TO_COPY = 9  XDXDXD so be careful i fixed this but still crashable 
+also another warning. If this crash ur game just restart ur pc b4 crash just a reminder it works good b4 but idk now its fuckin crashed my pc. Aimware s Createmove has limits so
+i hooked createmove like injectin cheat into cheat bleeh. Loader is kernel so if u trigger and dont unload hook like me. U ll trigger kernel and BSOD so so so 
+I think i fixed it but JUST BE CAREFUL.
+
+
+
+
+-- Rapidfire by murayefeskamus
+
+local ref             = gui.Reference("Misc", "General", "Extra")
+local rapidfire       = gui.Checkbox(ref, "misc.rapidfire",       "Rapidfire",     false)
+local rapidfire_ticks = gui.Slider(ref,   "misc.rapidfire_ticks", "Ticks",         14, 1, 200, 1)
+local rapidfire_key   = gui.Keybox(ref,   "misc.rapidfire_key",   "Rapidfire Key", 0)
+
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+        void* GetProcAddress(void* hModule, const char* lpProcName);
+        void* VirtualAlloc(void* lpAddress, size_t dwSize, uint32_t flAllocationType, uint32_t flProtect);
+        int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+        void* memcpy(void* dest, const void* src, size_t n);
+    ]]
+end)
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local MEM_COMMIT             = 0x1000
+local MEM_RESERVE            = 0x2000
+local HOOK_SIZE              = 9
+local TRAMPOLINE_SIZE        = 64
+local BYTES_TO_COPY          = 9
+local CREATEMOVE_INDEX       = 27
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if not module then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)",
+        ffi.C.GetProcAddress(module, "CreateInterface"))
+    if not ci then return nil end
+    return ci(name, nil)
+end
+
+local engine_client = nil
+for _, v in ipairs({ "VEngineClient014", "VEngineClient013", "VEngineClient015" }) do
+    local ptr = GetInterface("engine.dll", v)
+    if ptr and ffi.cast("uintptr_t", ptr) ~= 0 then
+        engine_client = ptr
+        print("RF IVEngineClient: " .. v)
+        break
+    end
+end
+
+if not engine_client then
+    print("RF IVEngineClient null")
+    return
+end
+
+local ec_vtable      = ffi.cast("uintptr_t**", engine_client)[0]
+local get_netchan_fn = ffi.cast("void*(__thiscall*)(void*)", ec_vtable[74])
+
+local function saksosakso()
+    local ok, nc = pcall(function() return get_netchan_fn(engine_client) end)
+    if not ok or not nc then return nil end
+    if ffi.cast("uintptr_t", nc) == 0 then return nil end
+    return nc
+end
+
+local CL_GC = { trampoline = nil, redirected_fn = nil }
+
+local function MYJEALOUSY(target, dest)
+    local old = ffi.new("uint32_t[1]")
+    if ffi.C.VirtualProtect(ffi.cast("void*", target), HOOK_SIZE, PAGE_EXECUTE_READWRITE, old) == 0 then
+        return false
+    end
+    local ptr = ffi.cast("uint8_t*", target)
+    ptr[0] = 0x68
+    ffi.cast("uint32_t*", ptr + 1)[0] = ffi.cast("uint32_t", ffi.cast("void*", dest))
+    ptr[5] = 0x90
+    ptr[6] = 0x90
+    ptr[7] = 0x90
+    ptr[8] = 0xC3
+    ffi.C.VirtualProtect(ffi.cast("void*", target), HOOK_SIZE, old[0], old)
+    return true
+end
+
+local function CreateTrampoline(fn, n)
+    local t = ffi.C.VirtualAlloc(nil, TRAMPOLINE_SIZE, MEM_COMMIT + MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+    if not t then return nil end
+    for i = 0, TRAMPOLINE_SIZE - 1 do ffi.cast("uint8_t*", t)[i] = 0x90 end
+    ffi.C.memcpy(t, ffi.cast("const void*", fn), n)
+    local jmp = ffi.cast("uint8_t*", t) + n
+    jmp[0] = 0x68
+    ffi.cast("uint32_t*", jmp + 1)[0] = ffi.cast("uint32_t", ffi.cast("uint8_t*", fn) + n)
+    jmp[5] = 0xC3
+    return t
+end
+
+local cl_move_addr = mem.FindPattern("engine.dll",
+    "55 8B EC 81 EC ?? ?? ?? ?? A1 ?? ?? ?? ?? 33 C5 89 45 FC 56 E8 ?? ?? ?? ?? 8B F0 83 7E 68 02 0F 8C")
+
+if not cl_move_addr then
+    print("RF clmove null BUT ITS IMPOSSIBLE")
+    return
+end
+
+local cl_move_t        = ffi.typeof("void(__cdecl*)(float, bool)")
+local Original_CL_Move = nil
+
+local function Hooked_CL_Move(accumulated_extra_samples, bFinalTick)
+    if Original_CL_Move then
+        ffi.cast(cl_move_t, Original_CL_Move)(accumulated_extra_samples, bFinalTick)
+    end
+
+    if not rapidfire:GetValue() then return end
+    local key = rapidfire_key:GetValue()
+    if key == 0 or not input.IsButtonDown(key) then return end
+
+    local nc = saksosakso()
+    if nc then
+        local nc_ptr = ffi.cast("uintptr_t", nc)
+        ffi.cast("int*", nc_ptr + 16)[0] = -1
+        ffi.cast("int*", nc_ptr + 28)[0] = 255
+    end
+
+    for i = 1, rapidfire_ticks:GetValue() do
+        if Original_CL_Move then
+            ffi.cast(cl_move_t, Original_CL_Move)(accumulated_extra_samples, bFinalTick)
+        end
+    end
+end
+
+CL_GC.redirected_fn = ffi.cast(cl_move_t, Hooked_CL_Move)
+local cl_trampoline = CreateTrampoline(cl_move_addr, BYTES_TO_COPY)
+if not cl_trampoline then print("RF trampoline pırtladı amk") return end
+CL_GC.trampoline = cl_trampoline
+MYJEALOUSY(cl_move_addr, CL_GC.redirected_fn)
+Original_CL_Move = cl_trampoline
+print(string.format("RF CL_Move: 0x%X", tonumber(ffi.cast("uintptr_t", cl_move_addr))))
+
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if not cm_sig then print("CM null") return end
+
+local ok1, global_addr = pcall(function()
+    return ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+end)
+if not ok1 or global_addr == 0 then print("RF globaladdr null") return end
+
+local ok2, clientmode = pcall(function()
+    return ffi.cast("uintptr_t*", global_addr)[0]
+end)
+if not ok2 or clientmode == 0 then print("RF CM null") return end
+
+local vtable   = ffi.cast("uintptr_t*", ffi.cast("uintptr_t*", clientmode)[0])
+local slot_ptr = vtable + CREATEMOVE_INDEX
+
+local CM_GC = { original = nil, hook_fn = nil, slot_ptr = slot_ptr }
+CM_GC.original = slot_ptr[0]
+
+local cm_t = ffi.typeof("bool(__fastcall*)(void*, void*, float, void*)")
+
+local function Hooked_CreateMove(ecx, edx, flInputSampleTime, cmd)
+    local result = ffi.cast(cm_t, CM_GC.original)(ecx, edx, flInputSampleTime, cmd)
+    if cmd == nil then return result end
+    if not rapidfire:GetValue() then return result end
+    local key = rapidfire_key:GetValue()
+    if key == 0 or not input.IsButtonDown(key) then return result end
+    local base = ffi.cast("uintptr_t", cmd)
+    ffi.cast("bool*", base + 0x3C)[0] = false
+    return result
+end
+
+CM_GC.hook_fn = ffi.cast(cm_t, Hooked_CreateMove)
+
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, PAGE_EXECUTE_READWRITE, old)
+slot_ptr[0] = ffi.cast("uintptr_t", CM_GC.hook_fn)
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, old[0], old)
+
+print("createmove hooked")
+
+callbacks.Register("Draw", "rapidfire_draw", function()
+    if not rapidfire:GetValue() then return end
+    local key = rapidfire_key:GetValue()
+    if key ~= 0 and input.IsButtonDown(key) then
+        draw.Color(255, 50, 50, 255)
+        draw.Text(10, 50, "purna")
+    end
+end)
+
+callbacks.Register("Unload", function()
+    if cl_move_addr and CL_GC.trampoline then
+        local old2 = ffi.new("uint32_t[1]")
+        ffi.C.VirtualProtect(ffi.cast("void*", cl_move_addr), HOOK_SIZE, PAGE_EXECUTE_READWRITE, old2)
+        ffi.C.memcpy(ffi.cast("void*", cl_move_addr), CL_GC.trampoline, HOOK_SIZE)
+        ffi.C.VirtualProtect(ffi.cast("void*", cl_move_addr), HOOK_SIZE, old2[0], old2)
+    end
+    if CM_GC.original and CM_GC.slot_ptr then
+        local old3 = ffi.new("uint32_t[1]")
+        ffi.C.VirtualProtect(ffi.cast("void*", CM_GC.slot_ptr), 4, PAGE_EXECUTE_READWRITE, old3)
+        CM_GC.slot_ptr[0] = ffi.cast("uintptr_t", CM_GC.original)
+        ffi.C.VirtualProtect(ffi.cast("void*", CM_GC.slot_ptr), 4, old3[0], old3)
+    end
+    print("hook unloaded (hope so)")
+end)
+print("rapid fire loaddededaded")
