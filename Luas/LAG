@@ -1,0 +1,31 @@
+its just true lag.
+
+
+-- LAG shit 
+local ref = gui.Reference("MISC", "Movement", "Other")
+
+
+local lag_key = gui.Keybox(ref, "lag_key", "LAG Key", 0) 
+
+ 
+local lag_value = gui.Slider(
+    ref,
+    "lag_value",
+    "Lag Value",
+    150,   
+    0,     
+    500    
+)
+
+local function key_down(keybox)
+    local k = keybox:GetValue()
+    if k == 0 then return false end
+    return input.IsButtonDown(k)
+end
+
+callbacks.Register("CreateMove", function(cmd)
+    if key_down(lag_key) then
+        cmd.sendpacket = false
+        cmd.tick_count = cmd.tick_count + lag_value:GetValue()
+    end
+end)
