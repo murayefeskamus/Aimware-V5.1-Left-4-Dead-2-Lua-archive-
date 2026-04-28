@@ -1,0 +1,201 @@
+--Minigun and other shitso esp aka mountedwepesp
+
+local ref = gui.Reference("Visuals", "Other", "Extra")
+local gb  = gui.Groupbox(ref, "Minigun ESP", 16, 400, 300, 0)
+
+local enable    = gui.Checkbox(gb, "minigun.esp.enable",    "Enable Minigun ESP", true)
+local show_text = gui.Checkbox(gb, "minigun.esp.text",      "Show Text",          true)
+local show_box  = gui.Checkbox(gb, "minigun.esp.box",       "Show Box",           true)
+local show_heat = gui.Checkbox(gb, "minigun.esp.heat",      "Show Heat Bar",      true)
+
+local style = gui.Combobox(gb, "minigun.esp.style", "Box Style",
+    "Original", "Corner", "Filled", "Soft Glow", "Hybrid"
+)
+
+local thickness = gui.Slider(gb, "minigun.esp.thickness", "Thickness", 2, 1, 10)
+local alpha     = gui.Slider(gb, "minigun.esp.alpha",     "Alpha",     180, 0, 255)
+local colorpick = gui.ColorPicker(gb, "minigun.esp.color","Colour",    255, 255, 255, 255)
+
+local font = draw.CreateFont("Tahoma", 16, 700)
+
+
+local function DrawOutlinedText(x, y, text)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 255)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(255, 255, 255, 255)
+    draw.Text(x, y, text)
+end
+
+
+local function DrawHeatBar(gun, left, top, right, bottom)
+    if not show_heat:GetValue() then return end
+    if not left or not right or not bottom then return end
+
+    local heat       = gun:GetPropFloat("m_heat")     or 0
+    local overheated = gun:GetPropInt("m_overheated") or 0
+    local firing     = gun:GetPropInt("m_firing")     or 0
+
+    heat = math.max(0, math.min(1, heat))
+
+    local barW = right - left
+    local barH = 6
+    local barY = bottom + 6
+
+    draw.Color(0, 0, 0, 180)
+    draw.FilledRect(left, barY, right, barY + barH)
+
+    local r = math.floor(255 * heat)
+    local g = math.floor(255 * (1 - heat))
+    local b = 0
+    local a = 255
+
+    if overheated == 1 then
+        a    = (math.sin(globals.RealTime() * 10) > 0) and 255 or 80
+        r, g, b = 255, 0, 0
+    end
+
+    draw.Color(r, g, b, a)
+    draw.FilledRect(left, barY, left + math.floor(barW * heat), barY + barH)
+
+    draw.Color(0, 0, 0, 200)
+    draw.OutlinedRect(left, barY, right, barY + barH)
+
+    draw.SetFont(font)
+    if overheated == 1 then
+        local ow, _ = draw.GetTextSize("OVERHEAT!")
+        draw.Color(0, 0, 0, 255)
+        draw.Text(left + barW/2 - ow/2 + 1, barY + barH + 3, "OVERHEAT!")
+        draw.Color(255, 0, 0, a)
+        draw.Text(left + barW/2 - ow/2,     barY + barH + 2, "OVERHEAT!")
+    else
+        local pct    = math.floor(heat * 100) .. "%"
+        local tw, _  = draw.GetTextSize(pct)
+        draw.Color(0, 0, 0, 200)
+        draw.Text(left + barW/2 - tw/2 + 1, barY + barH + 3, pct)
+        draw.Color(255, 255, 255, 200)
+        draw.Text(left + barW/2 - tw/2,     barY + barH + 2, pct)
+    end
+
+    if firing == 1 then
+        draw.Color(255, 120, 0, 255)
+        draw.FilledCircle(right + 8, barY + barH/2, 4)
+    end
+end
+
+
+local function DrawBox(ent)
+    if not show_box:GetValue() then return end
+
+    local mins   = ent:GetMins()
+    local maxs   = ent:GetMaxs()
+    local origin = ent:GetAbsOrigin()
+    if not mins or not maxs or not origin then return end
+
+    local points = {
+        Vector3(mins.x, mins.y, mins.z),
+        Vector3(mins.x, maxs.y, mins.z),
+        Vector3(maxs.x, maxs.y, mins.z),
+        Vector3(maxs.x, mins.y, mins.z),
+        Vector3(mins.x, mins.y, maxs.z),
+        Vector3(mins.x, maxs.y, maxs.z),
+        Vector3(maxs.x, maxs.y, maxs.z),
+        Vector3(maxs.x, mins.y, maxs.z),
+    }
+
+    local left, right, top, bottom
+
+    for i = 1, #points do
+        local sx, sy = client.WorldToScreen(origin + points[i])
+        if sx and sy then
+            left   = left   and math.min(left,   sx) or sx
+            right  = right  and math.max(right,  sx) or sx
+            top    = top    and math.min(top,    sy) or sy
+            bottom = bottom and math.max(bottom, sy) or sy
+        end
+    end
+
+    if not left or not right or not top or not bottom then return end
+
+    local r, g, b, _ = colorpick:GetValue()
+    local a          = alpha:GetValue()
+    local w, h       = right - left, bottom - top
+    local selected   = style:GetValue()
+
+    for i = 1, thickness:GetValue() do
+        draw.Color(r, g, b, a / i)
+
+        if selected == 0 then
+            draw.OutlinedRect(left-i, top-i, right+i, bottom+i)
+
+        elseif selected == 1 then
+            local cw, ch = w * 0.25, h * 0.25
+            draw.Line(left-i,  top-i,    left+cw,  top-i)
+            draw.Line(left-i,  top-i,    left,      top+ch)
+            draw.Line(right+i, top-i,    right-cw,  top-i)
+            draw.Line(right+i, top-i,    right,     top+ch)
+            draw.Line(left-i,  bottom+i, left+cw,  bottom+i)
+            draw.Line(left-i,  bottom+i, left,     bottom-ch)
+            draw.Line(right+i, bottom+i, right-cw, bottom+i)
+            draw.Line(right+i, bottom+i, right,    bottom-ch)
+
+        elseif selected == 2 then
+            draw.FilledRect(left-i, top-i, right+i, bottom+i)
+
+        elseif selected == 3 then
+            local fade = a * (1 - (i / thickness:GetValue()))
+            draw.Color(r, g, b, fade)
+            draw.FilledRect(left-i, top-i, right+i, bottom+i)
+
+        elseif selected == 4 then
+            draw.Color(r, g, b, a * 0.7)
+            draw.FilledRect(left, top, right, bottom)
+            local cw, ch = w * 0.25, h * 0.25
+            draw.Color(r, g, b, a)
+            draw.Line(left,  top,    left+cw,  top)
+            draw.Line(left,  top,    left,     top+ch)
+            draw.Line(right, top,    right-cw, top)
+            draw.Line(right, top,    right,    top+ch)
+            draw.Line(left,  bottom, left+cw,  bottom)
+            draw.Line(left,  bottom, left,     bottom-ch)
+            draw.Line(right, bottom, right-cw, bottom)
+            draw.Line(right, bottom, right,    bottom-ch)
+        end
+    end
+
+    DrawHeatBar(ent, left, top, right, bottom)
+end
+
+
+callbacks.Register("Draw", function()
+    if not enable:GetValue() then return end
+
+    local miniguns = entities.FindByClass("CPropMinigun")
+    if miniguns then
+        for i = 1, #miniguns do
+            local gun = miniguns[i]
+            if show_text:GetValue() then
+                local x, y = client.WorldToScreen(gun:GetAbsOrigin() + Vector3(0, 0, 50))
+                if x and y then DrawOutlinedText(x, y, "MINIGUN") end
+            end
+            DrawBox(gun)
+        end
+    end
+
+    local mounted = entities.FindByClass("CBaseMountedWeapon")
+    if mounted then
+        for i = 1, #mounted do
+            local gun = mounted[i]
+            if gun:GetClass() ~= "CPropMinigun" then
+                if show_text:GetValue() then
+                    local x, y = client.WorldToScreen(gun:GetAbsOrigin() + Vector3(0, 0, 50))
+                    if x and y then DrawOutlinedText(x, y, "MOUNTED WEAPON") end
+                end
+                DrawBox(gun)
+            end
+        end
+    end
+end)
