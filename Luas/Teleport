@@ -1,0 +1,13 @@
+another old lua doesnt work in 2026 should wait V6
+
+
+local ref = gui.Tab(gui.Reference("Misc"), "Movement", "Other")
+local teleport = gui.Keybox(ref, "ref_airstuck", "Teleport Key", 49)
+
+callbacks.Register("CreateMove", function(c)
+local teleport_key = teleport:GetValue()
+if teleport_key == 0 then return end
+if not input.IsButtonDown(teleport_key) then return end
+
+ c.forwardmove = 949.2457e3123
+end)
