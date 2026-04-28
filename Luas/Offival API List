@@ -1,0 +1,191 @@
+I wont share all API also metadata is secret so learn 1 by 1 from my luas but there is offical apilist for v5/5.1
+
+
+-- Aimware L4D2 Lua API + FFI Browser
+
+-- =====================
+-- API DATABASE
+-- =====================
+
+local API_DB = {
+
+    -- =====================
+    -- mem
+    -- =====================
+    "mem.Alloc",
+    "mem.Free",
+    "mem.GetModuleBase",
+    "mem.GetModuleSection",
+    "mem.FindPattern",
+
+    -- =====================
+    -- input
+    -- =====================
+    "input.GetMousePos",
+    "input.IsButtonDown",
+    "input.IsButtonPressed",
+    "input.IsButtonReleased",
+    "input.GetMouseWheelDelta",
+    "input.Keylist",
+
+    -- =====================
+    -- callbacks
+    -- =====================
+    "callbacks.Register",
+    "callbacks.Unregister",
+
+    -- =====================
+    -- common
+    -- =====================
+    "common.Time",
+    "common.DecodePNG",
+    "common.DecodeJPEG",
+    "common.RasterizeSVG",
+
+    -- =====================
+    -- draw
+    -- =====================
+    "draw.AddFontResource",
+    "draw.Color",
+    "draw.CreateFont",
+    "draw.CreateTexture",
+    "draw.FilledCircle",
+    "draw.FilledRect",
+    "draw.Fontlist",
+    "draw.GetScreenSize",
+    "draw.GetTextSize",
+    "draw.Line",
+    "draw.OutlinedCircle",
+    "draw.OutlinedRect",
+    "draw.RoundedRect",
+    "draw.RoundedRectFill",
+    "draw.SetFont",
+    "draw.SetScissorRect",
+    "draw.SetTexture",
+    "draw.ShadowRect",
+    "draw.Text",
+    "draw.TextShadow",
+    "draw.Triangle",
+    "draw.UpdateTexture",
+
+    -- =====================
+    -- file
+    -- =====================
+    "file.Open",
+    "file.Delete",
+    "file.Enumerate",
+    "file.Read",
+    "file.Write",
+
+    -- =====================
+    -- gui
+    -- =====================
+    "gui.Button",
+    "gui.Checkbox",
+    "gui.ColorPicker",
+    "gui.Combobox",
+    "gui.Command",
+    "gui.Custom",
+    "gui.Editbox",
+    "gui.Groupbox",
+    "gui.Keybox",
+    "gui.Listbox",
+    "gui.Multibox",
+    "gui.Reference",
+    "gui.Slider",
+    "gui.Tab",
+    "gui.Text",
+    "gui.Window",
+    "gui.XML",
+
+    -- =====================
+    -- http
+    -- =====================
+    "http.Get",
+
+    -- =====================
+    -- network
+    -- =====================
+    "network.Socket",
+    "network.GetAddrInfo",
+    "network.GetNameInfo",
+
+    -- =====================
+    -- vector
+    -- =====================
+    "vector",
+
+    -- =====================
+    -- ffi
+    -- =====================
+    "ffi",
+    "ffi.cdef",
+    "ffi.cast",
+    "ffi.new",
+    "ffi.typeof",
+    "ffi.sizeof",
+    "ffi.alignof",
+    "ffi.offsetof",
+    "ffi.istype",
+    "ffi.string",
+    "ffi.copy",
+    "ffi.fill",
+    "ffi.gc",
+    "ffi.metatype",
+    "ffi.errno",
+    "ffi.C",
+}
+
+ 
+local ref = gui.Reference("Misc", "Enhancements")
+local box = gui.Groupbox(ref, "L4D2 Lua API + FFI Browser", 16, 16, 360, 200)
+
+gui.Text(box, "Search API / Library / FFI:")
+local search_box = gui.Editbox(box, "api_browser_search", "")
+
+gui.Text(box, "Matching results:")
+
+local MAX_RESULTS = 20
+
+local function FindMatches(query)
+    local results = {}
+
+    if not query or query == "" then
+        return results
+    end
+
+    query = query:lower()
+
+    for _, api in ipairs(API_DB) do
+        if api:lower():find(query, 1, true) then
+            results[#results + 1] = api
+            if #results >= MAX_RESULTS then
+                break
+            end
+        end
+    end
+
+    return results
+end
+
+callbacks.Register("Draw", function()
+    local q = search_box:GetValue()
+    if q == "" then return end
+
+    local matches = FindMatches(q)
+    if #matches == 0 then return end
+
+    local x = 30
+    local y = 420
+    local line_h = 15
+
+    draw.Color(220, 220, 220, 255)
+
+    for i, api in ipairs(matches) do
+        draw.Text(x, y + (i - 1) * line_h, api)
+    end
+end)
+
+callbacks.Register("Unload", function()
+    -- stateless browser, safe unload
+end)
