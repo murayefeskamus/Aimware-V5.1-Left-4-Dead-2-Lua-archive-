@@ -1,0 +1,224 @@
+FOR ZONEMODE. Its static timer not ingame memory reader so its better for crash protection and triggerin some usermode ACs yk XDDD
+if u really wanna true cooldown just read this:
+// DT_AbilityVomit
+NETVAR(DataTable, baseclass, "DT_AbilityVomit", "baseclass") // 0x0
+NETVAR(int, m_isSpraying, "DT_AbilityVomit", "m_isSpraying") // 0x658
+NETVAR(DataTable, m_attackDuration, "DT_AbilityVomit", "m_attackDuration") // 0x65C
+NETVAR(DataTable, m_nextSpray, "DT_AbilityVomit", "m_nextSpray") // 0x668
+
+nvm there s lua:
+
+
+--Boomer Vomit ESP Zonemode
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Boomer Vomit ESP", 320, 400, 300, 0)
+
+local enable      = gui.Checkbox(gb, "bvomit.enable",  "Enable Vomit ESP",    true)
+local show_line   = gui.Checkbox(gb, "bvomit.line",    "Line to Boomer",      true)
+local show_warn   = gui.Checkbox(gb, "bvomit.warn",    "Screen Warning",      true)
+local show_timer  = gui.Checkbox(gb, "bvomit.timer",   "Vomit Timer",         true)
+local show_circle = gui.Checkbox(gb, "bvomit.circle",  "Ground Circle",       true)
+local col         = gui.ColorPicker(gb, "bvomit.col",  "Color", 0, 220, 80, 255)
+
+local VOMIT_DURATION = 2
+local COOLDOWN       = 18
+
+local font     = draw.CreateFont("Tahoma", 13, 700)
+local font_big = draw.CreateFont("Tahoma", 18, 700)
+
+local active_vomits = {}
+
+local function DrawOutlinedText(x, y, text, r, g, b, fnt)
+    draw.SetFont(fnt or font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+client.AllowListener("ability_use")
+
+callbacks.Register("FireGameEvent", "bvomit_event", function(event)
+    if not enable:GetValue() then return end
+    if event:GetName() ~= "ability_use" then return end
+    if event:GetString("ability") ~= "ability_vomit" then return end
+
+    local userid = event:GetInt("userid")
+    local idx    = client.GetPlayerIndexByUserID(userid)
+    local ent    = entities.GetByIndex(idx)
+    if not ent then return end
+
+    for _, v in ipairs(active_vomits) do
+        if v.ent:GetIndex() == ent:GetIndex() then
+            v.startTime = globals.RealTime()
+            v.phase     = "vomiting"
+            return
+        end
+    end
+
+    table.insert(active_vomits, {
+        ent       = ent,
+        startTime = globals.RealTime(),
+        phase     = "vomiting",
+    })
+end)
+
+callbacks.Register("Draw", "bvomit_draw", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local mypos  = lp:GetAbsOrigin()
+    local sw, sh = draw.GetScreenSize()
+    local now    = globals.RealTime()
+    local r, g, b, a = col:GetValue()
+
+    local i = 1
+    while i <= #active_vomits do
+        local v   = active_vomits[i]
+        local age = now - v.startTime
+
+        if not v.ent or not v.ent:IsAlive() then
+            table.remove(active_vomits, i)
+        elseif v.phase == "vomiting" and age > VOMIT_DURATION then
+            v.phase     = "cooldown"
+            v.startTime = now
+            i = i + 1
+        elseif v.phase == "cooldown" and age > COOLDOWN then
+            v.phase     = "ready"
+            v.startTime = now
+            i = i + 1
+        elseif v.phase == "ready" and age > 3 then
+            table.remove(active_vomits, i)
+        else
+            i = i + 1
+        end
+    end
+
+    for _, v in ipairs(active_vomits) do
+        local ent = v.ent
+        local age = now - v.startTime
+        local pos = ent:GetAbsOrigin()
+        if not pos then goto continue end
+
+        local sx, sy = client.WorldToScreen(pos + Vector3(0, 0, 80))
+
+        if show_circle:GetValue() and v.phase == "vomiting" then
+            local segs   = 32
+            local radius = 200
+            local pulse  = (math.sin(now * 8) + 1) / 2
+            local pr2    = math.floor(radius * (0.9 + pulse * 0.1))
+            local ratio  = math.max(0, (VOMIT_DURATION - age) / VOMIT_DURATION)
+            local ca     = math.floor(ratio * a)
+
+            local prev_x, prev_y = nil, nil
+            for seg = 0, segs do
+                local angle = (seg / segs) * math.pi * 2
+                local wx = pos.x + math.cos(angle) * pr2
+                local wy = pos.y + math.sin(angle) * pr2
+                local cx2, cy2 = client.WorldToScreen(Vector3(wx, wy, pos.z + 5))
+                if cx2 and cy2 then
+                    if prev_x and prev_y then
+                        draw.Color(0, 0, 0, math.floor(ca * 0.4))
+                        draw.Line(prev_x+1, prev_y+1, cx2+1, cy2+1)
+                        draw.Color(r, g, b, ca)
+                        draw.Line(prev_x, prev_y, cx2, cy2)
+                    end
+                    prev_x, prev_y = cx2, cy2
+                end
+            end
+        end
+
+        if not sx or not sy then goto continue end
+
+        if show_timer:GetValue() then
+            local barW = 70
+            local barH = 6
+            local bx   = sx - barW/2
+            local by   = sy - 32
+
+            if v.phase == "vomiting" then
+                local remain = math.max(0, VOMIT_DURATION - age)
+                local ratio  = remain / VOMIT_DURATION
+
+                draw.Color(0, 0, 0, 160)
+                draw.FilledRect(bx, by, bx + barW, by + barH)
+                draw.Color(r, g, b, 200)
+                draw.FilledRect(bx, by, bx + math.floor(barW * ratio), by + barH)
+                draw.Color(0, 0, 0, 180)
+                draw.OutlinedRect(bx, by, bx + barW, by + barH)
+
+                local txt = string.format("KUSUYOR %.1fs", remain)
+                local tw, _ = draw.GetTextSize(txt)
+                DrawOutlinedText(sx - tw/2, by - 15, txt, r, g, b)
+
+            elseif v.phase == "cooldown" then
+                local remain = math.max(0, COOLDOWN - age)
+                local ratio  = remain / COOLDOWN
+                local cr     = math.floor(255 * ratio)
+                local cg2    = math.floor(255 * (1 - ratio))
+
+                draw.Color(0, 0, 0, 160)
+                draw.FilledRect(bx, by, bx + barW, by + barH)
+                draw.Color(cr, cg2, 0, 200)
+                draw.FilledRect(bx, by, bx + math.floor(barW * (1 - ratio)), by + barH)
+                draw.Color(0, 0, 0, 180)
+                draw.OutlinedRect(bx, by, bx + barW, by + barH)
+
+                local txt = string.format("CD %.1fs", remain)
+                local tw, _ = draw.GetTextSize(txt)
+                DrawOutlinedText(sx - tw/2, by - 15, txt, cr, cg2, 0)
+
+            elseif v.phase == "ready" then
+                if math.floor(now * 4) % 2 == 0 then
+                    local txt = " KUSACAK"
+                    local tw, _ = draw.GetTextSize(txt)
+                    DrawOutlinedText(sx - tw/2, by - 15, txt, 255, 50, 50)
+                end
+            end
+        end
+
+        if v.phase == "vomiting" and math.floor(now * 5) % 2 == 0 then
+            local name  = ent:GetName() or "Boomer"
+            local label = "🤢 " .. name .. " KUSUYOR"
+            local tw, _ = draw.GetTextSize(label)
+            DrawOutlinedText(sx - tw/2, sy - 50, label, r, g, b)
+        end
+
+        if show_line:GetValue() then
+            local msx, msy = client.WorldToScreen(mypos)
+            if msx and msy then
+                local la = v.phase == "vomiting" and a or math.floor(a * 0.4)
+                draw.Color(0, 0, 0, 80)
+                draw.Line(msx+1, msy+1, sx+1, sy+1)
+                draw.Color(r, g, b, la)
+                draw.Line(msx, msy, sx, sy)
+            end
+        end
+
+        if show_warn:GetValue() and v.phase == "vomiting" then
+            local dist = (pos - mypos):Length()
+            if dist < 300 and math.floor(now * 4) % 2 == 0 then
+                local dist_m = math.floor(dist * 0.01905)
+                local wtxt   = string.format(" BOOMER KUSUYOR [%dm]", dist_m)
+                draw.SetFont(font_big)
+                local tw, _ = draw.GetTextSize(wtxt)
+
+                draw.Color(0, 0, 0, 180)
+                draw.FilledRect(sw/2 - tw/2 - 8, sh * 0.18,
+                               sw/2 + tw/2 + 8, sh * 0.18 + 30)
+                draw.Color(r, g, b, 220)
+                draw.OutlinedRect(sw/2 - tw/2 - 8, sh * 0.18,
+                                 sw/2 + tw/2 + 8, sh * 0.18 + 30)
+                draw.Color(r, g, b, 255)
+                draw.Text(sw/2 - tw/2, sh * 0.18 + 4, wtxt)
+            end
+        end
+
+        ::continue::
+    end
+end)
