@@ -1,0 +1,55 @@
+Minimal Version cuz keybinds are big n idk :/
+
+
+-- Minimal Aimbot Toggle Display System by Murayefeskamus 
+
+local visualsRef = gui.Reference("Visuals", "Other")
+local displayGroup = gui.Groupbox(visualsRef, "Minimal Display", 325, 315, 300, 0)
+
+local enableMaster = gui.Checkbox(displayGroup, "enable_main", "Enable", true)
+local toggleKey = gui.Keybox(displayGroup, "toggle_key", "Toggle Key", 0)
+
+local font = draw.CreateFont("Segoe UI", 18, 700)  -- 14 → 18, 600 → 700
+
+local displayEnabled = true
+local lastKeyState = false
+
+local function handleToggle()
+    local key = toggleKey:GetValue()
+    if key == 0 then return end
+
+    local pressed = input.IsButtonDown(key)
+
+    if pressed and not lastKeyState then
+        displayEnabled = not displayEnabled
+    end
+
+    lastKeyState = pressed
+end
+
+local function getAimbotStatus()
+    local enabled =
+        (gui.GetValue("rbot.master") and gui.GetValue("rbot.enable")) or
+        (gui.GetValue("lbot.master") and gui.GetValue("lbot.aim.enable"))
+    
+    return enabled and "ON" or "OFF"
+end
+
+callbacks.Register("Draw", function()
+    if not enableMaster:GetValue() then return end
+
+    handleToggle()
+    if not displayEnabled then return end
+
+    draw.SetFont(font)
+    
+    local status = getAimbotStatus()
+    
+    if status == "ON" then
+        draw.Color(0, 255, 0, 255) 
+    else
+        draw.Color(255, 0, 0, 255)  
+    end
+    
+    draw.Text(10, 10, status)
+end)
