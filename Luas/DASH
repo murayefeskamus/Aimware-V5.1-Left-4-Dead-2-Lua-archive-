@@ -1,0 +1,43 @@
+for tenks
+
+
+--DASH lua
+
+local ref = gui.Reference("Misc")
+local box = gui.Groupbox(ref, "DASH Ability", 175, 450, 300, 0)
+
+local dash_key = gui.Keybox(box, "dash.key", "Dash Key", 0)
+
+local DASH_DURATION = 0.15
+local DASH_AMOUNT = 14
+
+local dashActive = false
+local dashEnd = 0
+
+local function SetSpeed(enable)
+    gui.SetValue("misc.speedhack.enable", enable and 1 or 0)
+    if enable then
+        gui.SetValue("misc.speedhack.amount", DASH_AMOUNT)
+    end
+end
+
+callbacks.Register("Draw", function()
+
+    local cur = globals.RealTime()
+    local key = dash_key:GetValue()
+    local screenW, screenH = draw.GetScreenSize()
+
+    if key == 0 then return end
+
+    if dashActive and cur >= dashEnd then
+        dashActive = false
+        SetSpeed(false)
+    end
+
+    if input.IsButtonPressed(key) and not dashActive then
+        dashActive = true
+        dashEnd = cur + DASH_DURATION
+        SetSpeed(true)
+    end
+
+end)
