@@ -3,7 +3,7 @@ local ref             = gui.Reference("Misc", "General", "Extra")
 local freecam_enable  = gui.Checkbox(ref, "misc.freecam",       "Free Camera", false)
 local freecam_speed   = gui.Slider(ref,  "misc.freecam_speed",  "Cam Speed",   5, 1, 20, 1)
 
--- FFI Definitions
+
 ffi.cdef[[
     void* GetModuleHandleA(const char* lpModuleName);
     void* GetProcAddress(void* hModule, const char* lpProcName);
@@ -13,11 +13,9 @@ ffi.cdef[[
 local PAGE_EXECUTE_READWRITE = 0x40
 local OVERRIDE_VIEW_INDEX    = 19
 
--- Offsets
 local VS_ORIGIN_X, VS_ORIGIN_Y, VS_ORIGIN_Z = 0x3C, 0x40, 0x44
 local VS_ANGLES_X, VS_ANGLES_Y, VS_ANGLES_Z = 0x48, 0x4C, 0x50
 
--- Logic & Hooking
 local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
 if not cm_sig then print("freecam CM sig fail") return end
 
@@ -35,7 +33,7 @@ local slot_ptr = vtable + OVERRIDE_VIEW_INDEX
 local GC = { original = slot_ptr[0], hook_fn = nil, slot_ptr = slot_ptr }
 print(string.format("freecam Orig: 0x%X", tonumber(GC.original)))
 
--- Helper functions (Direct access)
+
 local function ReadFloat(ptr, offset)
     return ffi.cast("float*", ptr + offset)[0]
 end
@@ -85,7 +83,6 @@ end
 
 GC.hook_fn = ffi.cast(ov_t, Hooked_OverrideView)
 
--- Apply Hook
 local old = ffi.new("uint32_t[1]")
 ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, PAGE_EXECUTE_READWRITE, old)
 slot_ptr[0] = ffi.cast("uintptr_t", GC.hook_fn)
