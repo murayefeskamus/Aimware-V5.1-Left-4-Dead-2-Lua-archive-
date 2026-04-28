@@ -1,0 +1,117 @@
+if u use SMG hitbox change speed 4 like me and my cfg. Its clearly bad for charger and also detectable. theres a lua for fix this:
+
+
+
+--Charger Hitbox Step FIX
+
+local HITBOX_CHARGER = 0.125
+local HITBOX_DEFAULT = 4.0
+local GUI_KEY        = "lbot.aim.hitbox.smg.hitboxstep"
+
+local active_charger = nil  -- takip edilen charger entity
+
+local function SetHitbox(val)
+    gui.SetValue(GUI_KEY, val)
+end
+
+client.AllowListener("player_hurt")
+
+callbacks.Register("FireGameEvent", "charger_hurt", function(event)
+    if event:GetName() ~= "player_hurt" then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+
+    local attacker_id = event:GetInt("attacker")
+    local attacker    = entities.GetByIndex(client.GetPlayerIndexByUserID(attacker_id))
+    if not attacker or attacker:GetIndex() ~= lp:GetIndex() then return end
+
+    local victim_id = event:GetInt("userid")
+    local victim    = entities.GetByIndex(client.GetPlayerIndexByUserID(victim_id))
+    if not victim then return end
+
+    if victim:GetClass() == "Charger" then
+        active_charger = victim
+        SetHitbox(HITBOX_CHARGER)
+    end
+end)
+
+callbacks.Register("FireGameEvent", "charger_death", function(event)
+    if event:GetName() ~= "player_death" then return end
+    if not active_charger then return end
+
+    local userid = event:GetInt("userid")
+    local ent    = entities.GetByIndex(client.GetPlayerIndexByUserID(userid))
+    if not ent then return end
+
+    if ent:GetIndex() == active_charger:GetIndex() then
+        active_charger = nil
+        SetHitbox(HITBOX_DEFAULT)
+    end
+end)
+
+client.AllowListener("player_hurt")
+client.AllowListener("player_death")
+
+callbacks.Register("Draw", "charger_aim_check", function()
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+
+    local eyePos = lp:GetAbsOrigin() + Vector3(0, 0, 64)
+    local eyeAng = engine.GetViewAngles()
+    if not eyePos or not eyeAng then return end
+
+    local yaw   = eyeAng.y * (math.pi / 180)
+    local pitch = eyeAng.x * (math.pi / 180)
+    local fwd   = Vector3(
+        math.cos(pitch) * math.cos(yaw),
+        math.cos(pitch) * math.sin(yaw),
+        -math.sin(pitch)
+    )
+
+    local chargers = {}
+for i = 1, 512 do
+    local ok, e = pcall(function() return entities.GetByIndex(i) end)
+    if ok and e then
+        local ok2, cls = pcall(function() return e:GetClass() end)
+        if ok2 and cls == "Charger" then
+            table.insert(chargers, e)
+        end
+    end
+end
+    local found    = false
+
+    for _, ch in pairs(chargers) do
+        if not ch:IsAlive() then goto continue end
+        if ch:IsDormant() then goto continue end
+
+        local chpos = ch:GetAbsOrigin()
+        if not chpos then goto continue end
+
+        local diff = chpos + Vector3(0,0,40) - eyePos
+        local len  = diff:Length()
+        if len == 0 then goto continue end
+
+        local dot = (diff.x * fwd.x + diff.y * fwd.y + diff.z * fwd.z) / len
+
+        if dot > 0.98 and input.IsButtonDown(0x1) then
+            found          = true
+            active_charger = ch
+            SetHitbox(HITBOX_CHARGER)
+            break
+        end
+
+        ::continue::
+    end
+
+    if active_charger and not active_charger:IsAlive() then
+        active_charger = nil
+        SetHitbox(HITBOX_DEFAULT)
+    end
+end)
+
+callbacks.Register("Unload", function()
+    SetHitbox(HITBOX_DEFAULT)
+end)
+    SetHitbox(HITBOX_DEFAULT)
+end)
