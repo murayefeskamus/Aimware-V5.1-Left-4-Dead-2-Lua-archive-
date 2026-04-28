@@ -1,0 +1,39 @@
+It can find all hittible indexes so u can detect it and just write a new lua for another prop esp. 
+
+
+
+local done = false
+callbacks.Register("Draw", "car_find", function()
+    if done then return end
+    done = true
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local mypos = lp:GetAbsOrigin()
+
+    local classes = { "CPhysicsProp", "CBreakableProp", "CDynamicProp" }
+
+    for _, cls in ipairs(classes) do
+        local ents = entities.FindByClass(cls)
+        if ents then
+            for _, ent in pairs(ents) do
+                if not ent:IsDormant() then
+                    local pos = ent:GetAbsOrigin()
+                    if pos then
+                        local dx = pos.x - mypos.x
+                        local dy = pos.y - mypos.y
+                        local dz = pos.z - mypos.z
+                        local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+                        if dist < 150 then
+                            local ok, idx = pcall(function()
+                                return ent:GetPropInt("m_nModelIndex")
+                            end)
+                            print(string.format("[%s] dist=%.0f modelidx=%s", cls, dist, tostring(idx)))
+                        end
+                    end
+                end
+            end
+        end
+    end
+    print("[DONE]")
+end)
