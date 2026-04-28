@@ -1,0 +1,72 @@
+legit eklenti çok takmayın obs için 
+
+-- L4D2 M2 Aimbot Disabler
+
+local wasM2Pressed = false
+local aimbotWasDisabledByScript = false
+
+local function isAimbotEnabled()
+    if not gui or not gui.GetValue then return false end
+    local rbotActive = (gui.GetValue("rbot.master") and gui.GetValue("rbot.enable"))
+    local lbotActive = (gui.GetValue("lbot.master") and gui.GetValue("lbot.aim.enable"))
+    return rbotActive or lbotActive
+end
+
+local function setAimbot(enable)
+    if not gui or not gui.SetValue then return end
+    if gui.GetValue("rbot.master") then gui.SetValue("rbot.enable", enable and 1 or 0) end
+    if gui.GetValue("lbot.master") then gui.SetValue("lbot.aim.enable", enable and 1 or 0) end
+end
+
+local function hasButton(buttons, flag)
+    return (buttons % (flag * 2)) >= flag
+end
+
+local ref = gui.Reference("MISC")
+local tab = gui.Tab(ref, "m2_disabler", "M2 Aimbot Disabler")
+local box = gui.Groupbox(tab, "M2 Aimbot Disabler", 16, 16, 296, 150)
+
+local menu = {
+    enable = gui.Checkbox(box, "m2d_enable", "Enable Script", true),
+}
+
+
+callbacks.Register("CreateMove", function(cmd)
+    -- Script GUI'den kapalıysa, hiçbir şey yapma ve aimbot'u eski haline getir.
+    if not menu.enable:GetValue() then
+        if aimbotWasDisabledByScript then
+            setAimbot(true)
+            aimbotWasDisabledByScript = false
+        end
+        return
+    end
+
+    local localPlayer = entities.GetLocalPlayer()
+    if not localPlayer or not localPlayer:IsAlive() then return end
+
+    local buttons = cmd:GetButtons()
+    local m2Pressed = hasButton(buttons, 2048)  -- IN_ATTACK2
+
+    if m2Pressed and not wasM2Pressed then
+        if isAimbotEnabled() then
+            setAimbot(false)
+            aimbotWasDisabledByScript = true
+        end
+    end
+
+    if not m2Pressed and wasM2Pressed then
+        if aimbotWasDisabledByScript then
+            setAimbot(true)
+            aimbotWasDisabledByScript = false
+        end
+    end
+
+    wasM2Pressed = m2Pressed
+end)
+
+callbacks.Register("Unload", function()
+    -- Script kapanırken aimbot'u biz kapattıysak, tekrar aç.
+    if aimbotWasDisabledByScript then
+        setAimbot(true)
+    end
+end)
