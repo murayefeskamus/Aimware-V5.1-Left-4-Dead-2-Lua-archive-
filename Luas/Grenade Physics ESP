@@ -1,0 +1,167 @@
+--Grenade Helper (Physics)
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Projectile ESP", 320, 400, 300, 0)
+
+local enable       = gui.Checkbox(gb, "proj.enable",   "Enable Projectile ESP", true)
+local show_radius  = gui.Checkbox(gb, "proj.radius",   "Show Damage Radius",    true)
+local show_timer   = gui.Checkbox(gb, "proj.timer",    "Show Pipe Timer",       true)
+local PIPE_FUSE    = 6.0  -- saniye
+
+local font = draw.CreateFont("Tahoma", 14, 700)
+
+local pipe_spawn = {}  
+
+local function DrawOutlinedText(x, y, text, r, g, b)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 220)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r or 255, g or 255, b or 255, 255)
+    draw.Text(x, y, text)
+end
+
+local function GetColor(cls)
+    if cls == "CMolotovProjectile"  then return 255, 80,  0,   220 end
+    if cls == "CPipeBombProjectile" then return 80,  180, 255, 220 end
+    if cls == "CVomitJarProjectile" then return 80,  255, 80,  220 end
+    return 255, 255, 255, 220
+end
+
+local function GetLabel(cls)
+    if cls == "CMolotovProjectile"  then return "MOLOTOV" end
+    if cls == "CPipeBombProjectile" then return "PIPE"    end
+    if cls == "CVomitJarProjectile" then return "VOMIT"   end
+    return "???"
+end
+
+local function DrawWorldRadius(cx, cy, cz, radius, r, g, b, a)
+    local steps   = 32
+    local points  = {}
+    for i = 0, steps - 1 do
+        local angle = (i / steps) * math.pi * 2
+        local wx    = cx + math.cos(angle) * radius
+        local wy    = cy + math.sin(angle) * radius
+        local sx, sy = client.WorldToScreen(Vector3(wx, wy, cz + 5))
+        if sx and sy then
+            table.insert(points, {sx, sy})
+        end
+    end
+    if #points < 2 then return end
+    draw.Color(r, g, b, a)
+    for i = 1, #points do
+        local a2 = points[i]
+        local b2 = points[(i % #points) + 1]
+        draw.Line(a2[1], a2[2], b2[1], b2[2])
+    end
+end
+
+callbacks.Register("Draw", "proj_landing", function()
+    if not enable:GetValue() then return end
+
+    local GRAVITY = 800
+    local dt      = 0.05
+    local steps   = 200
+    local now     = globals.RealTime()
+    local classes = {"CMolotovProjectile", "CPipeBombProjectile", "CVomitJarProjectile"}
+
+    local active_pipes = {}
+    local pipes = entities.FindByClass("CPipeBombProjectile") or {}
+    for _, e in pairs(pipes) do
+        active_pipes[e:GetIndex()] = true
+    end
+    for idx, _ in pairs(pipe_spawn) do
+        if not active_pipes[idx] then
+            pipe_spawn[idx] = nil
+        end
+    end
+
+    for _, cls in pairs(classes) do
+        local ents = entities.FindByClass(cls) or {}
+        for _, e in pairs(ents) do
+            if e:IsDormant() then goto continue end
+
+            local pos = e:GetAbsOrigin()
+            local vel = e:GetPropVector("m_vecVelocity")
+            if not pos or not vel then goto continue end
+
+            if cls == "CPipeBombProjectile" then
+                local idx = e:GetIndex()
+                if not pipe_spawn[idx] then
+                    pipe_spawn[idx] = now
+                end
+            end
+
+            local px, py, pz = pos.x, pos.y, pos.z
+            local vx, vy, vz = vel.x, vel.y, vel.z
+            local land_x, land_y, land_z = px, py, pz
+
+            for i = 1, steps do
+                local nx = px + vx * dt
+                local ny = py + vy * dt
+                local nz = pz + vz * dt
+                vz = vz - GRAVITY * dt
+                if nz < pz and nz <= 0 then
+                    land_x, land_y, land_z = nx, ny, 0
+                    break
+                end
+                if nz < land_z then
+                    land_x, land_y, land_z = nx, ny, nz
+                end
+                px, py, pz = nx, ny, nz
+            end
+
+            local sx, sy = client.WorldToScreen(Vector3(land_x, land_y, land_z + 5))
+            if not sx or not sy then goto continue end
+
+            local r, g, b, a = GetColor(cls)
+            local label      = GetLabel(cls)
+
+            if show_radius:GetValue() then
+                local dmg_r = e:GetPropFloat("m_DmgRadius") or 0
+                if dmg_r > 0 then
+                    DrawWorldRadius(land_x, land_y, land_z, dmg_r, r, g, b, 120)
+                end
+            end
+
+            draw.Color(0, 0, 0, 200)
+            draw.OutlinedCircle(sx, sy, 13)
+            draw.Color(r, g, b, a)
+            draw.OutlinedCircle(sx, sy, 12)
+            draw.FilledCircle(sx, sy, 4)
+
+            local tw, _ = draw.GetTextSize(label)
+            DrawOutlinedText(sx - tw/2, sy - 22, label, r, g, b)
+
+            if cls == "CPipeBombProjectile" and show_timer:GetValue() then
+                local idx      = e:GetIndex()
+                local elapsed  = now - (pipe_spawn[idx] or now)
+                local remain   = math.max(0, PIPE_FUSE - elapsed)
+                local ratio    = remain / PIPE_FUSE
+
+                local tr = math.floor(255 * (1 - ratio))
+                local tg = math.floor(255 * ratio)
+
+                local barW = 60
+                local barH = 6
+                local barX = sx - barW/2
+                local barY = sy + 16
+
+                draw.Color(0, 0, 0, 180)
+                draw.FilledRect(barX, barY, barX + barW, barY + barH)
+                draw.Color(tr, tg, 0, 255)
+                draw.FilledRect(barX, barY, barX + math.floor(barW * ratio), barY + barH)
+                draw.Color(0, 0, 0, 200)
+                draw.OutlinedRect(barX, barY, barX + barW, barY + barH)
+
+                local sec_txt = string.format("%.1fs", remain)
+                local stw, _  = draw.GetTextSize(sec_txt)
+                DrawOutlinedText(sx - stw/2, barY + barH + 2, sec_txt, tr, tg, 0)
+            end
+
+            ::continue::
+        end
+    end
+end)
