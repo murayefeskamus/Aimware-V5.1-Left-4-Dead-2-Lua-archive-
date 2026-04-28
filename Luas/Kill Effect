@@ -1,0 +1,159 @@
+-- Kill Effect
+
+local ref = gui.Reference("Visuals", "World")
+local box = gui.Groupbox(ref, "Kill Effect", 320, 520, 305, 0)
+
+local enable   = gui.Checkbox(box, "l4d2.killeffect.enable", "Enable Kill Effect", false)
+local duration = gui.Slider(box, "l4d2.killeffect.time", "Effect Duration", 1.5, 0.5, 4)
+
+local text_input = gui.Editbox(box, "l4d2.killeffect.text", "Effect Text")
+text_input:SetValue("BOOM!")
+
+local font_select = gui.Combobox(box, "l4d2.killeffect.font", "Font Shit",
+    "Tahoma",
+    "Verdana",
+    "Arial",
+    "Trebuchet MS"
+)
+
+local font_size = gui.Slider(box, "l4d2.killeffect.fontsize", "Font Size", 20, 12, 40)
+local font_bold = gui.Checkbox(box, "l4d2.killeffect.bold", "Bold Font", true)
+
+local color = gui.ColorPicker(box, "l4d2.killeffect.color", "Text Color", 255, 80, 80, 255)
+
+local fontCache = nil
+local lastFontState = ""
+
+local function UpdateFont()
+    local state =
+        font_select:GetValue() .. "|" ..
+        font_size:GetValue() .. "|" ..
+        tostring(font_bold:GetValue())
+
+    if state ~= lastFontState then
+        local fonts = { "Tahoma", "Verdana", "Arial", "Trebuchet MS" }
+        local weight = font_bold:GetValue() and 800 or 400
+        fontCache = draw.CreateFont(fonts[font_select:GetValue()+1], font_size:GetValue(), weight)
+        lastFontState = state
+    end
+end
+
+local function SafeGetProp(ent, prop)
+    local ok, val = pcall(function() return ent:GetProp(prop) end)
+    if not ok then return nil end
+    return val
+end
+
+local function IsGhost(ent)
+    local g = SafeGetProp(ent, "m_isGhost")
+    return (g == 1 or g == true)
+end
+
+local function IsDormantSafe(ent)
+    local ok, val = pcall(function() return ent:IsDormant() end)
+    if not ok then return false end
+    return val == true
+end
+
+local function GetPlayers()
+    local p = entities.FindByClass("CTerrorPlayer")
+    if not p or #p == 0 then
+        p = entities.FindByClass("CCSPlayer")
+    end
+    return p
+end
+
+local function IsEntityDeadSafe(ent)
+    if not ent then return false end
+    local ok, alive = pcall(function() return ent:IsAlive() end)
+    if not ok then return true end
+    return alive == false
+end
+
+local function GetAimTarget(me, maxDist)
+    local myPos = me:GetAbsOrigin() + Vector3(0,0,60)
+    local fwd = engine.GetViewAngles():Forward()
+    local best, bestDot = nil, 0.985
+    local myTeam = me:GetTeamNumber()
+
+    for _, ent in pairs(GetPlayers() or {}) do
+        if ent ~= me and ent:IsAlive() and not IsDormantSafe(ent) then
+            local tTeam = ent:GetTeamNumber()
+            if myTeam == 2 then
+                if tTeam ~= 3 or IsGhost(ent) then goto cont end
+            elseif myTeam == 3 then
+                if tTeam ~= 2 then goto cont end
+            end
+
+            local pos = ent:GetAbsOrigin() + Vector3(0,0,60)
+            local dir = pos - myPos
+            local dist = dir:Length()
+            if dist < maxDist then
+                dir = dir / dist
+                local dot = fwd:Dot(dir)
+                if dot > bestDot then
+                    bestDot = dot
+                    best = ent
+                end
+            end
+        end
+        ::cont::
+    end
+    return best
+end
+
+local effects = {}
+local lastTarget = nil
+
+callbacks.Register("Draw", function()
+
+    if not enable:GetValue() then return end
+
+    UpdateFont()
+    draw.SetFont(fontCache)
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then
+        lastTarget = nil
+        return
+    end
+
+    local target = GetAimTarget(me, 1500)
+
+    if lastTarget and IsEntityDeadSafe(lastTarget) then
+        local pos = lastTarget:GetAbsOrigin()
+        effects[#effects+1] = {
+            pos = Vector3(pos.x, pos.y, pos.z),
+            start = globals.RealTime(),
+            expire = globals.RealTime() + duration:GetValue()
+        }
+        lastTarget = nil
+    end
+
+    if target and target:IsAlive() then
+        lastTarget = target
+    end
+
+    local r,g,b,a = color:GetValue()
+    local txt = text_input:GetValue()
+
+    for i = #effects, 1, -1 do
+        local e = effects[i]
+        local t = globals.RealTime()
+
+        if t > e.expire then
+            table.remove(effects, i)
+        else
+            local prog = t - e.start
+            local life = duration:GetValue()
+            local worldPos = e.pos + Vector3(0,0,70 + prog * 15)
+            local sx, sy = client.WorldToScreen(worldPos)
+
+            if sx and sy then
+                local alpha = math.floor((1 - prog / life) * a)
+                draw.Color(r,g,b,alpha)
+                draw.Text(sx, sy, txt)
+            end
+        end
+    end
+end)
