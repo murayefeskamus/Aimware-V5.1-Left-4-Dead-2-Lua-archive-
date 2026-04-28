@@ -1,0 +1,77 @@
+-- Legitbot FOV Circle
+local CAMERA_FOV = 108
+local COMPENSATION = 1.02
+
+local ref = gui.Reference("Lua")
+
+local legit_fov = gui.Slider(
+    ref,
+    "lua_legit_fov_decimal",
+    "Visual Legit FOV",
+    5.0,
+    0.0,
+    30.0,
+    0.1
+)
+
+local thickness = gui.Slider(
+    ref,
+    "lua_fov_thickness",
+    "Circle Thickness",
+    1,
+    1,
+    4
+)
+
+local function FovToPixels(legit_fov_deg)
+    local w, h = draw.GetScreenSize()
+    local half_w = w / 2
+
+    local ratio = legit_fov_deg / CAMERA_FOV
+    local effective_fov = CAMERA_FOV * ratio
+
+    return math.tan(math.rad(effective_fov) / 2) * half_w * COMPENSATION
+end
+
+callbacks.Register("Draw", function()
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then return end
+
+    local fov = legit_fov:GetValue()
+    if fov <= 0 then return end
+
+    local radius = FovToPixels(fov)
+    if radius <= 1 then return end
+
+    local w, h = draw.GetScreenSize()
+    local cx, cy = w / 2, h / 2
+
+    draw.Color(255, 0, 0, 220)
+
+    local segments = 90
+    local step = (2 * math.pi) / segments
+
+    local px = cx + math.cos(0) * radius
+    local py = cy + math.sin(0) * radius
+
+    for i = 1, segments do
+        local a = step * i
+        local x = cx + math.cos(a) * radius
+        local y = cy + math.sin(a) * radius
+
+        for t = 0, thickness:GetValue() - 1 do
+            draw.Line(px, py + t, x, y + t)
+        end
+
+        px, py = x, y
+    end
+
+    local text = string.format("FOV: %.1f", fov)
+    local tw, th = draw.GetTextSize(text)
+
+    draw.Color(255, 255, 255, 230)
+    draw.Text(cx - tw / 2, cy + radius + 6, text)
+end)
+
+
+
