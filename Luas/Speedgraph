@@ -1,0 +1,64 @@
+local ref = gui.Reference("Visuals", "World")
+local box = gui.Groupbox(ref, "Speed Graph", 320, 620, 305, 0)
+
+local enable  = gui.Checkbox(box, "speedgraph.enable", "Enable Speed Graph", false)
+local width   = gui.Slider(box, "speedgraph.width", "Graph Width", 200, 100, 400)
+local height  = gui.Slider(box, "speedgraph.height", "Graph Height", 40, 20, 100)
+local samples = gui.Slider(box, "speedgraph.samples", "Samples", 80, 30, 200)
+
+local speedBuffer = {}
+
+local function GetSpeed2D(p)
+    if not p then return 0 end
+
+    local vx = p:GetPropFloat("localdata", "m_vecVelocity[0]")
+    local vy = p:GetPropFloat("localdata", "m_vecVelocity[1]")
+
+    if not vx or not vy then return 0 end
+
+    return math.sqrt(vx * vx + vy * vy)
+end
+
+callbacks.Register("Draw", function()
+    if not enable:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local screenX, screenY = draw.GetScreenSize()
+
+    local baseX = screenX / 2 - width:GetValue() / 2
+     local baseY = screenY - 125
+
+    local speed = GetSpeed2D(me)
+
+    table.insert(speedBuffer, 1, speed)
+    if #speedBuffer > samples:GetValue() then
+        table.remove(speedBuffer)
+    end
+
+    draw.Color(255, 255, 255, 80)
+    draw.Line(baseX, baseY, baseX + width:GetValue(), baseY)
+
+    for i = 1, #speedBuffer - 1 do
+        local s1 = speedBuffer[i]
+        local s2 = speedBuffer[i + 1]
+
+        local maxSpeed = 260
+        local y1 = baseY - math.min(s1, maxSpeed) / maxSpeed * height:GetValue()
+        local y2 = baseY - math.min(s2, maxSpeed) / maxSpeed * height:GetValue()
+
+        local x1 = baseX + (i - 1) * (width:GetValue() / samples:GetValue())
+        local x2 = baseX + i * (width:GetValue() / samples:GetValue())
+
+        if s1 < 5 then
+            draw.Color(0, 255, 0, 200)       
+        elseif s1 < 120 then
+            draw.Color(255, 200, 0, 200)    
+        else
+            draw.Color(255, 80, 80, 200)   
+        end
+
+        draw.Line(x1, y1, x2, y2)
+    end
+end)
