@@ -1,0 +1,100 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local aspect_list = gui.Combobox(ref, "misc.aspect", "Aspect Ratio",
+    "Default",
+    "16:9",
+    "16:10",
+    "21:9",
+    "4:3",
+    "1:1"
+)
+
+local ASPECTS = {
+    [0] = 0.0,
+    [1] = 1.777778,
+    [2] = 1.6,
+    [3] = 2.333333,
+    [4] = 1.333333,
+    [5] = 1.0,
+}
+
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+        void* GetProcAddress(void* hModule, const char* lpProcName);
+    ]]
+end)
+
+local function GetInterface(dll, name)
+    local ok1, module = pcall(ffi.C.GetModuleHandleA, dll)
+    if not ok1 or module == nil then return nil end
+    
+    local ok2, ci_addr = pcall(ffi.C.GetProcAddress, module, "CreateInterface")
+    if not ok2 or ci_addr == nil then return nil end
+    
+    local ok3, ci = pcall(ffi.cast, "void*(__cdecl*)(const char*, int*)", ci_addr)
+    if not ok3 or ci == nil then return nil end
+    
+    local ok4, result = pcall(ci, name, nil)
+    if not ok4 then return nil end
+    return result
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+
+local ok_find, find_var_fn = pcall(function()
+    if not icvar then return nil end
+    return ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+end)
+
+local function FindConVar(name)
+    if not find_var_fn or not icvar then return nil end
+    local ok, result = pcall(find_var_fn, icvar, name)
+    if not ok then return nil end
+    return result
+end
+
+local function RemoveCheatFlag(cv)
+    if not cv then return end
+    local ok, fn = pcall(function()
+        return ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", cv)[0][4])
+    end)
+    
+    if ok and fn then
+        pcall(fn, cv, 16384)
+    end
+end
+
+local function SetFloat(cv, value)
+    if not cv then return end
+    local ok, fn = pcall(function()
+        return ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", cv)[0][13])
+    end)
+    
+    if ok and fn then
+        pcall(fn, cv, value)
+    end
+end
+
+local cv_aspect = FindConVar("r_aspectratio")
+if cv_aspect then
+    RemoveCheatFlag(cv_aspect)
+end
+
+local last_idx = -1
+
+callbacks.Register("Draw", function()
+    if not cv_aspect then return end 
+    
+    local idx = aspect_list:GetValue()
+    if idx == last_idx then return end
+    
+    SetFloat(cv_aspect, ASPECTS[idx])
+    last_idx = idx
+end)
+
+callbacks.Register("Unload", function()
+    if cv_aspect then
+        SetFloat(cv_aspect, 0.0)
+    end
+end)
