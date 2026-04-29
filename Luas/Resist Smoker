@@ -1,0 +1,42 @@
+local yakalandikmi = 0 -- Dil ile çekilip çekilmediğimizi tutan değişken
+
+local function MURY(olay)
+
+	local silayaasigim = client.GetLocalPlayerIndex()
+	local ikikuzukula = olay:GetInt("victim")
+	local getuidamk = client.GetPlayerIndexByUserID(ikikuzukula)
+
+	if olay:GetName() == "tongue_grab" then
+
+		if getuidamk == silayaasigim then
+			yakalandikmi = 1		
+		end
+	
+	elseif olay:GetName() == "tongue_release" then
+
+		if getuidamk == silayaasigim then
+			yakalandikmi = 0		
+		end
+
+	end
+
+end
+
+client.AllowListener("tongue_release")
+client.AllowListener("tongue_grab")
+callbacks.Register("FireGameEvent", MURY)
+
+
+local function sikintiYok()
+	local benimEleman = entities:GetLocalPlayer()
+
+	if yakalandikmi == 1 and benimEleman ~= nil then
+		engine.AddOutSeqNr(10000)
+	else 
+		yakalandikmi = 0
+		engine.AddOutSeqNr(0)
+	end
+
+end
+             
+callbacks.Register("Draw", sikintiYok)
