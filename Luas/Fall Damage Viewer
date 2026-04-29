@@ -1,0 +1,54 @@
+local font = draw.CreateFont("Tahoma", 15, 800)
+local hits  = {}
+
+client.AllowListener("player_falldamage")
+
+callbacks.Register("FireGameEvent", function(event)
+    if event:GetName() ~= "player_falldamage" then return end
+    local userid = event:GetInt("userid")
+    local dmg    = event:GetInt("damage")
+    local ent    = entities.GetByIndex(client.GetPlayerIndexByUserID(userid))
+    if not ent then return end
+    local pos = ent:GetAbsOrigin()
+    if not pos then return end
+    table.insert(hits, {
+        pos    = pos,
+        dmg    = dmg,
+        time   = globals.RealTime(),
+        expire = globals.RealTime() + 3.5,
+    })
+end)
+
+callbacks.Register("Draw", "falldmg_draw", function()
+    local now = globals.RealTime()
+    local i   = 1
+    while i <= #hits do
+        local h = hits[i]
+        if now > h.expire then
+            table.remove(hits, i)
+        else
+            local age    = now - h.time
+            local fade_start = 2.0
+            local alpha
+            if age < fade_start then
+                alpha = 255
+            else
+                alpha = math.floor(255 * (1 - (age - fade_start) / (3.5 - fade_start)))
+                alpha = math.max(0, alpha)
+            end
+            local floatY = math.floor(age * 25)
+
+            local sx, sy = client.WorldToScreen(h.pos + Vector3(0,0,60))
+            if sx and sy then
+                local txt = "-" .. h.dmg
+                draw.SetFont(font)
+                local tw, _ = draw.GetTextSize(txt)
+                draw.Color(0,0,0,math.floor(alpha*0.6))
+                draw.Text(sx-tw/2+1, sy-floatY+1, txt)
+                draw.Color(255, 140, 0, alpha)
+                draw.Text(sx-tw/2, sy-floatY, txt)
+            end
+            i = i + 1
+        end
+    end
+end)
