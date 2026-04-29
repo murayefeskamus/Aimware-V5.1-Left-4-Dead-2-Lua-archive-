@@ -1,0 +1,28 @@
+local enabledddcheckbosx = gui.Checkbox(gui.Reference("Misc", "General", "Extra"), "fastladder", "Fast Ladders", 0)
+enabledddcheckbosx:SetDescription("fastladder")
+
+local function PORNAAAA(cmd)
+    if not gui.GetValue("misc.master") then return end
+    if not enabledddcheckbosx:GetValue() then return end
+    
+    local LP = entities.GetLocalPlayer()
+    if not LP then return end
+
+    if bit.band(LP:GetPropInt("m_nRenderMode"), bit.lshift(1, 8)) == 0 then return end 
+    
+    local laddbasic = LP:GetPropVector("m_vecLadderNormal")
+
+    if cmd.forwardmove ~= 0 then
+        if cmd.forwardmove > 0 then
+            cmd.buttons = bit.band(bit.bor(cmd.buttons, bit.lshift(1, 9)), bit.bnot(bit.lshift(1, 10))) 
+        else
+            cmd.buttons = bit.band(bit.bor(cmd.buttons, bit.lshift(1, 10)), bit.bnot(bit.lshift(1, 9))) 
+        end
+        
+        local angleshit = EulerAngles(-89, math.deg(math.acos(laddbasic.x)) + (laddbasic.y < 0 and 180 or 0) + 90, 0)
+        angleshit:Normalize()
+        cmd.viewangles = angleshit
+    end
+end
+
+callbacks.Register("CreateMove", PORNAAAA)
