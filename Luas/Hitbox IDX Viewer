@@ -1,0 +1,48 @@
+-- Hıtbox IDX Viewer for every shi
+
+local ref = gui.Reference("Visuals", "World")
+local group = gui.Groupbox(ref, "Hitbox Index Viewer", 320, 300, 305, 0)
+
+local enable = gui.Checkbox(group, "hitbox.enable", "Enable Hitbox Viewer", false)
+local colorpicker = gui.ColorPicker(group, "hitbox.color", "Hitbox Color", 255, 0, 0, 255)
+local thickness = gui.Slider(group, "hitbox.thickness", "Line Thickness", 1, 1, 3)
+
+local function ShowHitboxes()
+    if not enable:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players then return end
+
+    local r, g, b, a = colorpicker:GetValue()
+    draw.Color(r, g, b, a)
+
+    for _, p in pairs(players) do
+        if p == me then goto continue end
+        if not p:IsAlive() or p:IsDormant() then goto continue end
+
+        for i = 0, 20 do
+            local x, y, z = p:GetHitboxPosition(i)
+            if x then
+                local sx, sy = client.WorldToScreen(x, y, z)
+                if sx and sy then
+                    draw.Text(sx, sy, tostring(i))
+                    if thickness:GetValue() > 1 then
+                        draw.Text(sx + 1, sy, tostring(i))
+                    end
+                end
+            end
+        end
+
+        ::continue::
+    end
+end
+
+callbacks.Register("Draw", ShowHitboxes)
+
+local function UnloadHitboxes()
+    callbacks.Unregister("Draw", ShowHitboxes)
+    print("Unloaded cleanly.")
+end
