@@ -97,3 +97,378 @@ callbacks.Register("FireGameEvent", "vote_revealer", function(event)
 end)
 
 print("voteviewerdone")
+
+
+
+
+
+
+
+
+Vote 2
+
+--Vote Controller Hud shii with netvars
+
+local ref    = gui.Reference("Visuals", "Other")
+local gb     = gui.Groupbox(ref, "Vote HUD", 325, 315, 300, 0)
+local enable = gui.Checkbox(gb, "vh.enable", "Enable", false)
+local show_inactive = gui.Checkbox(gb, "vh.inactive", "Oylama Yoksa Gizle", true)
+
+local font_big = draw.CreateFont("Tahoma", 15, 700)
+local font_sm  = draw.CreateFont("Tahoma", 12, 600)
+
+local TEAM_NAMES = { [0]="HERKES", [2]="SURVIVOR", [3]="INFECTED" }
+
+local active_issue = ""
+client.AllowListener("vote_started")
+client.AllowListener("vote_passed")
+client.AllowListener("vote_failed")
+client.AllowListener("vote_ended")
+
+callbacks.Register("FireGameEvent", "vh_ev", function(event)
+    local n = event:GetName()
+    if n == "vote_started" then
+        active_issue = event:GetString("issue") or "?"
+    elseif n == "vote_passed" or n == "vote_failed" or n == "vote_ended" then
+        active_issue = ""
+    end
+end)
+
+callbacks.Register("Draw", "vh_draw", function()
+    if not enable:GetValue() then return end
+
+    local vc = entities.FindByClass("CVoteController")
+    if not vc or not vc[1] then return end
+    local e = vc[1]
+
+    local ok1, issue   = pcall(function() return e:GetPropInt("m_activeIssueIndex") end)
+    local ok2, teamv   = pcall(function() return e:GetPropInt("m_onlyTeamToVote") end)
+    local ok3, yes     = pcall(function() return e:GetPropInt("m_votesYes") end)
+    local ok4, no      = pcall(function() return e:GetPropInt("m_votesNo") end)
+    local ok5, total   = pcall(function() return e:GetPropInt("m_potentialVotes") end)
+
+    if not ok1 then return end
+
+    local active = ok1 and issue and issue >= 0
+    if not active and show_inactive:GetValue() then return end
+
+    local sw, sh = draw.GetScreenSize()
+    local pad  = 10
+    local w    = 260
+    local h    = active and 100 or 40
+    local px   = sw/2 - w/2
+    local py   = 30
+
+    draw.Color(0, 0, 0, 180)
+    draw.FilledRect(px, py, px+w, py+h)
+    draw.Color(active and 255 or 80, active and 220 or 80, active and 50 or 80, 200)
+    draw.OutlinedRect(px, py, px+w, py+h)
+
+    draw.SetFont(font_big)
+
+    if not active then
+        local txt = "Oylama Yok"
+        local tw, _ = draw.GetTextSize(txt)
+        draw.Color(120, 120, 120, 200)
+        draw.Text(px+w/2-tw/2, py+10, txt)
+        return
+    end
+
+    local issueTxt = active_issue ~= "" and active_issue or ("Issue #"..issue)
+    local itw, _ = draw.GetTextSize(issueTxt)
+    draw.Color(255, 220, 50, 255)
+    draw.Text(px+w/2-itw/2, py+pad, issueTxt)
+
+    draw.SetFont(font_sm)
+    local teamStr = "Oy: " .. (TEAM_NAMES[ok2 and teamv or 0] or "?")
+    local ttw, _ = draw.GetTextSize(teamStr)
+    draw.Color(180, 180, 180, 220)
+    draw.Text(px+w/2-ttw/2, py+28, teamStr)
+
+    local yesV  = ok3 and yes   or 0
+    local noV   = ok4 and no    or 0
+    local totV  = ok5 and total or 0
+
+    local yTxt = string.format("EVET: %d", yesV)
+    local nTxt = string.format("HAYIR: %d", noV)
+    local tTxt = string.format("/ %d", totV)
+
+    draw.Color(80, 220, 80, 255)
+    draw.Text(px+pad, py+46, yTxt)
+    draw.Color(255, 80, 80, 255)
+    local ntw, _ = draw.GetTextSize(nTxt)
+    draw.Text(px+w-ntw-pad, py+46, nTxt)
+    draw.Color(200, 200, 200, 200)
+    local ttw2, _ = draw.GetTextSize(tTxt)
+    draw.Text(px+w/2-ttw2/2, py+46, tTxt)
+
+    local barX = px+pad
+    local barY = py+66
+    local barW = w - pad*2
+    local barH = 8
+
+    draw.Color(25, 25, 25, 220)
+    draw.FilledRect(barX, barY, barX+barW, barY+barH)
+
+    if totV > 0 then
+        local yesFill = math.floor(barW * yesV / totV)
+        local noFill  = math.floor(barW * noV  / totV)
+
+        draw.Color(80, 220, 80, 220)
+        draw.FilledRect(barX, barY, barX+yesFill, barY+barH)
+        draw.Color(255, 80, 80, 220)
+        draw.FilledRect(barX+barW-noFill, barY, barX+barW, barY+barH)
+    end
+
+    draw.Color(100, 100, 100, 180)
+    draw.OutlinedRect(barX, barY, barX+barW, barY+barH)
+
+    local midX = barX + barW/2
+    draw.Color(200, 200, 200, 100)
+    draw.Line(midX, barY, midX, barY+barH)
+
+    if totV > 0 then
+        local pct = string.format("%.0f%%", yesV/totV*100)
+        draw.SetFont(font_sm)
+        local pw, _ = draw.GetTextSize(pct)
+        draw.Color(0, 0, 0, 180)
+        draw.Text(barX+barW/2-pw/2+1, barY-14+1, pct)
+        draw.Color(255, 255, 255, 220)
+        draw.Text(barX+barW/2-pw/2, barY-14, pct)
+    end
+end)
+
+
+
+
+Vote 3
+
+
+-- Vote with event based 
+
+local ref  = gui.Reference("Visuals", "Other")
+local box  = gui.Groupbox(ref, "Vote ESP", 325, 620, 300, 0)
+
+local enable     = gui.Checkbox(box, "voteesp.enable",   "Enable Vote ESP",      true)
+local show_casts = gui.Checkbox(box, "voteesp.casts",    "Show Who Voted",       true)
+local show_enemy = gui.Checkbox(box, "voteesp.enemy",    "Show Enemy Votes",     true)
+local duration   = gui.Slider(box,   "voteesp.duration", "Display Duration (s)", 15, 5, 60)
+
+local font_big   = draw.CreateFont("Segoe UI", 16, 700)
+local font_small = draw.CreateFont("Segoe UI", 13, 600)
+
+
+local history   = {}  
+local cast_log  = {}   
+local MAX_MSG   = 12
+
+local current_vote = {
+    active  = false,
+    issue   = "",
+    yes     = 0,
+    no      = 0,
+    total   = 0,
+    team    = 0,
+    start   = 0,
+}
+
+
+client.AllowListener("vote_started")
+client.AllowListener("vote_ended")
+client.AllowListener("vote_changed")
+client.AllowListener("vote_passed")
+client.AllowListener("vote_failed")
+client.AllowListener("vote_cast_yes")
+client.AllowListener("vote_cast_no")
+
+local function AddLog(text, r, g, b)
+    table.insert(history, 1, {
+        text  = text,
+        r = r, g = g, b = b,
+        time  = common.Time(),
+    })
+    if #history > MAX_MSG then table.remove(history) end
+    print("[VOTE] " .. text)
+end
+
+local function GetEntityByID(entityid)
+    if not entityid or entityid <= 0 then return nil end
+    return entities.GetByIndex(entityid)
+end
+
+local function TeamLabel(team)
+    if team == 2 then return "S" end   
+    if team == 3 then return "I" end   
+    return "?"
+end
+
+local function TeamColor(team)
+    if team == 2 then return 100, 200, 255 end  
+    if team == 3 then return 255, 100, 100 end  
+    return 200, 200, 200
+end
+
+
+callbacks.Register("FireGameEvent", "vote_esp_event", function(event)
+    if not enable:GetValue() then return end
+
+    local ename = event:GetName()
+
+    if ename == "vote_started" then
+        local issue     = event:GetString("issue") or "?"
+        local team      = event:GetInt("team") or 0
+        local initiator = event:GetInt("initiator") or 0  
+
+        local ent  = entities.GetByIndex(initiator)
+        local name = ent and ent:GetName() or ("Ent#" .. initiator)
+
+        current_vote.active = true
+        current_vote.issue  = issue
+        current_vote.yes    = 0
+        current_vote.no     = 0
+        current_vote.total  = 0
+        current_vote.team   = team
+        current_vote.start  = common.Time()
+
+        cast_log = {}  
+
+        local r, g, b = TeamColor(team)
+        AddLog(string.format("[%s] %s oylama başlattı: %s", TeamLabel(team), name, issue), r, g, b)
+
+    elseif ename == "vote_changed" then
+        local yes   = event:GetInt("yesVotes")   or 0
+        local no    = event:GetInt("noVotes")    or 0
+        local total = event:GetInt("potentialVotes") or 0
+
+        current_vote.yes   = yes
+        current_vote.no    = no
+        current_vote.total = total
+
+        AddLog(string.format("Oy: EVET %d  HAYIR %d  / %d", yes, no, total), 255, 220, 50)
+
+    elseif ename == "vote_cast_yes" then
+        if not show_casts:GetValue() then return end
+
+        local entityid = event:GetInt("entityid") or 0
+        local ent  = GetEntityByID(entityid)
+        local name = ent and ent:GetName() or ("Ent#" .. entityid)
+        local team = ent and ent:GetTeamNumber() or 0
+
+        local lp = entities.GetLocalPlayer()
+        if lp and not show_enemy:GetValue() then
+            if ent and ent:GetTeamNumber() ~= lp:GetTeamNumber() then return end
+        end
+
+        table.insert(cast_log, 1, {
+            name = name,
+            vote = "EVET",
+            team = team,
+            time = common.Time(),
+        })
+        if #cast_log > MAX_MSG then table.remove(cast_log) end
+
+        local r, g, b = TeamColor(team)
+        AddLog(string.format("[%s] %s → EVET ✓", TeamLabel(team), name), r, g, b)
+
+    elseif ename == "vote_cast_no" then
+        if not show_casts:GetValue() then return end
+
+        local entityid = event:GetInt("entityid") or 0
+        local ent  = GetEntityByID(entityid)
+        local name = ent and ent:GetName() or ("Ent#" .. entityid)
+        local team = ent and ent:GetTeamNumber() or 0
+
+        local lp = entities.GetLocalPlayer()
+        if lp and not show_enemy:GetValue() then
+            if ent and ent:GetTeamNumber() ~= lp:GetTeamNumber() then return end
+        end
+
+        table.insert(cast_log, 1, {
+            name = name,
+            vote = "HAYIR",
+            team = team,
+            time = common.Time(),
+        })
+        if #cast_log > MAX_MSG then table.remove(cast_log) end
+
+        local r, g, b = TeamColor(team)
+        AddLog(string.format("[%s] %s → HAYIR ✗", TeamLabel(team), name), r, g, b)
+
+    elseif ename == "vote_passed" then
+        local details = event:GetString("details") or ""
+        current_vote.active = false
+        AddLog("OY GEÇTİ ✓" .. (details ~= "" and (": " .. details) or ""), 0, 255, 100)
+
+    elseif ename == "vote_failed" then
+        current_vote.active = false
+        AddLog("OY BAŞARISIZ ✗", 255, 60, 60)
+
+    elseif ename == "vote_ended" then
+        current_vote.active = false
+        AddLog("Oylama bitti.", 180, 180, 180)
+    end
+end)
+
+callbacks.Register("Draw", "vote_esp_draw", function()
+    if not enable:GetValue() then return end
+    if #history == 0 and not current_vote.active then return end
+
+    local now    = common.Time()
+    local sw, sh = draw.GetScreenSize()
+    local dur    = duration:GetValue()
+
+    if current_vote.active then
+        draw.SetFont(font_big)
+
+        local issue_txt = "[ " .. current_vote.issue .. " ]"
+        local count_txt = string.format("EVET: %d   HAYIR: %d   / %d",
+            current_vote.yes, current_vote.no, current_vote.total)
+
+        local itw, _ = draw.GetTextSize(issue_txt)
+        local ctw, _ = draw.GetTextSize(count_txt)
+
+        local bx = sw/2 - math.max(itw, ctw)/2 - 8
+        local by = 30
+        draw.Color(0, 0, 0, 180)
+        draw.FilledRect(bx, by, bx + math.max(itw, ctw) + 16, by + 50)
+        draw.Color(255, 220, 50, 255)
+        draw.OutlinedRect(bx, by, bx + math.max(itw, ctw) + 16, by + 50)
+
+        draw.Color(255, 220, 50, 255)
+        draw.Text(sw/2 - itw/2, by + 4, issue_txt)
+
+        draw.Color(255, 255, 255, 255)
+        draw.Text(sw/2 - ctw/2, by + 26, count_txt)
+    end
+
+    draw.SetFont(font_small)
+
+    local x = 10
+    local y = sh - 80
+
+    local i = 1
+    while i <= #history do
+        local msg = history[i]
+        local age = now - msg.time
+
+        if age > dur then
+            table.remove(history, i)
+        else
+            local alpha = 255
+            if age > dur - 2 then
+                alpha = math.floor(((dur - age) / 2) * 255)
+                alpha = math.max(0, math.min(255, alpha))
+            end
+
+            local _, th = draw.GetTextSize(msg.text)
+
+            draw.Color(0, 0, 0, math.floor(alpha * 0.8))
+            draw.Text(x + 1, y + 1, msg.text)
+            draw.Color(msg.r, msg.g, msg.b, alpha)
+            draw.Text(x, y, msg.text)
+
+            y = y - th - 3
+            i = i + 1
+        end
+    end
+end)
