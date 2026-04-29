@@ -1,0 +1,83 @@
+-- Tps (will add horizontal and vertical offsets) 
+
+local ref = gui.Reference("Misc", "General", "Extra")
+local thirdperson = gui.Checkbox(ref, "misc.thirdperson", "Third Person", false)
+
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+        void* GetProcAddress(void* hModule, const char* lpProcName);
+    ]]
+end)
+
+local FCVAR_CHEAT = 16384
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if icvar == nil then print("interfacenull") return end
+
+local find_var_fn = ffi.cast(
+    "void*(__thiscall*)(void*, const char*)",
+    ffi.cast("uintptr_t**", icvar)[0][13]
+)
+
+local function FindConVar(name)
+    local ok, result = pcall(function()
+        return find_var_fn(icvar, name)
+    end)
+    if not ok or result == nil then return nil end
+    if ffi.cast("uintptr_t", result) == 0 then return nil end
+    return result
+end
+
+local function RemoveCheatFlag(cv)
+    if cv == nil then return end
+    local fn = ffi.cast(
+        "void(__thiscall*)(void*, int)",
+        ffi.cast("uintptr_t**", cv)[0][4]
+    )
+    pcall(fn, cv, FCVAR_CHEAT)
+end
+
+local function SetFloat(cv, value)
+    if cv == nil then return end
+    local fn = ffi.cast(
+        "void(__thiscall*)(void*, float)",
+        ffi.cast("uintptr_t**", cv)[0][13]
+    )
+    pcall(fn, cv, value)
+end
+
+local cv_dist = FindConVar("z_view_distance")
+if cv_dist then
+    RemoveCheatFlag(cv_dist)
+    print("r")
+else
+    print("null")
+end
+
+local last_state = false
+
+callbacks.Register("CreateMove", "thirdperson_move", function(cmd)
+    local enabled = thirdperson:GetValue()
+    if enabled == last_state then return end
+    last_state = enabled
+
+    if enabled then
+        SetFloat(cv_dist, -150.0)
+    else
+        SetFloat(cv_dist, 0.0)
+    end
+end)
+
+callbacks.Register("Unload", function()
+    if cv_dist then SetFloat(cv_dist, 0.0) end
+end)
