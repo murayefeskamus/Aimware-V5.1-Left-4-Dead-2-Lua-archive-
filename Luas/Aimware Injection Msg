@@ -1,0 +1,71 @@
+--Inj Msg 
+local FADE_IN   = 0.6
+local HOLD_TIME = 1.8
+local FADE_OUT  = 0.6
+
+--
+local startTime = globals.RealTime()
+
+--
+local function clamp(x, min, max)
+    if x < min then return min end
+    if x > max then return max end
+    return x
+end
+
+--
+callbacks.Register("Draw", function()
+    local t = globals.RealTime() - startTime
+    local total = FADE_IN + HOLD_TIME + FADE_OUT
+    if t > total then
+        return
+    end
+
+    local alpha = 0
+    if t < FADE_IN then
+        alpha = clamp(t / FADE_IN, 0, 1)
+    elseif t < FADE_IN + HOLD_TIME then
+        alpha = 1
+    else
+        alpha = clamp(1 - ((t - FADE_IN - HOLD_TIME) / FADE_OUT), 0, 1)
+    end
+
+    local sw, sh = draw.GetScreenSize()
+
+    --
+    local mainFont = draw.CreateFont("Arial", 80, 800)  --
+    draw.SetFont(mainFont)
+
+    local aimText = "AIM"
+    local wareText = "WARE"
+    local aimW, aimH = draw.GetTextSize(aimText)
+    local wareW, wareH = draw.GetTextSize(wareText)
+
+    local gap = 4  -- 
+    local totalWidth = aimW + wareW + gap
+    local startX = (sw - totalWidth) / 2
+    local startY = (sh - aimH) / 2
+
+    -- 
+    draw.Color(220, 40, 40, 255 * alpha)
+    draw.Text(startX, startY, aimText)
+
+    --
+    draw.Color(255, 255, 255, 255 * alpha)
+    draw.Text(startX + aimW + gap, startY, wareText)
+
+    --
+    local subFont = draw.CreateFont("Arial", 20, 400)  
+    draw.SetFont(subFont)
+
+    local subtitle = "ONE STEP AHEAD OF THE GAME"
+    local subW, subH = draw.GetTextSize(subtitle)
+
+    local subX = (sw - subW) / 2
+    local subY = startY + aimH + 10  
+
+    draw.Color(255, 255, 255, 255 * alpha)
+    draw.Text(subX, subY, subtitle)
+end)
+
+
