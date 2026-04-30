@@ -1,0 +1,38 @@
+Basic chat spammer with editbox so u can edit ur msg
+
+
+
+--Chat Spammer
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local spam_enable  = gui.Checkbox(ref, "spam.enable",  "Chat Spammer",  false)
+local spam_text    = gui.Editbox(ref,  "spam.text",    "Message")
+local spam_delay   = gui.Slider(ref,   "spam.delay",   "Delay (ticks)", 66, 1, 500, 1)
+local spam_team    = gui.Checkbox(ref, "spam.team",    "Team Chat",     false)
+
+local tick_count = 0
+
+callbacks.Register("CreateMove", "chat_spammer", function(cmd)
+    if not spam_enable:GetValue() then
+        tick_count = 0
+        return
+    end
+
+    local text = spam_text:GetValue()
+    if not text or text == "" then return end
+
+    tick_count = tick_count + 1
+    if tick_count < spam_delay:GetValue() then return end
+    tick_count = 0
+
+    if spam_team:GetValue() then
+        client.ChatTeamSay(text)
+    else
+        client.ChatSay(text)
+    end
+end)
+
+callbacks.Register("Unload", function()
+    spam_enable:SetValue(false)
+    tick_count = 0
+end)
