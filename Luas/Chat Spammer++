@@ -1,0 +1,83 @@
+
+Newline version is just goat but didnt find dunno if i find it ill just add np
+
+--Chat Spammer++
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local msg_names = {
+    "Sikildiniz",
+    "Yarragımı ye",
+    "Allahını doveyım",
+    "sikime otur amın oglu",
+    "yarrrragımı yalaaa"
+}
+
+local spam_enable = gui.Checkbox(ref, "prog_spam.enable", "Chat Spammer++", false)
+local spam_list   = gui.Combobox(ref, "prog_spam.msg", "Mesaj Seçimi", unpack(msg_names))
+local spam_team   = gui.Checkbox(ref, "prog_spam.team", "Team Chat", false)
+
+local current_char_idx = 1
+local last_selection = spam_list:GetValue()
+local tick_count = 0
+local TICK_DELAY = 24 -- İstediğin 24 tick değeri buraya sabitlendi
+
+local function get_utf8_sub(str, count)
+    local i = 1
+    local char_count = 0
+    while char_count < count and i <= #str do
+        local b = string.byte(str, i)
+        if b >= 0 and b <= 127 then i = i + 1
+        elseif b >= 194 and b <= 223 then i = i + 2
+        elseif b >= 224 and b <= 239 then i = i + 3
+        elseif b >= 240 and b <= 244 then i = i + 4
+        end
+        char_count = char_count + 1
+    end
+    return string.sub(str, 1, i - 1)
+end
+
+local function get_utf8_len(str)
+    local _, count = string.gsub(str, "[^\128-\191]", "")
+    return count
+end
+
+callbacks.Register("CreateMove", "progressive_spammer", function(cmd)
+    if not spam_enable:GetValue() then
+        current_char_idx = 1
+        tick_count = 0
+        return
+    end
+
+    if spam_list:GetValue() ~= last_selection then
+        current_char_idx = 1
+        last_selection = spam_list:GetValue()
+        tick_count = 0
+    end
+
+    tick_count = tick_count + 1
+    if tick_count < TICK_DELAY then return end
+    tick_count = 0
+
+    local selected_msg = msg_names[spam_list:GetValue() + 1]
+    if not selected_msg or selected_msg == "" then return end
+
+    local max_len = get_utf8_len(selected_msg)
+
+    if current_char_idx <= max_len then
+        local part = get_utf8_sub(selected_msg, current_char_idx)
+        
+        if spam_team:GetValue() then
+            client.ChatTeamSay(part)
+        else
+            client.ChatSay(part)
+        end
+        current_char_idx = current_char_idx + 1
+    else
+        current_char_idx = 1
+    end
+end)
+
+callbacks.Register("Unload", function()
+    spam_enable:SetValue(false)
+    current_char_idx = 1
+end)
