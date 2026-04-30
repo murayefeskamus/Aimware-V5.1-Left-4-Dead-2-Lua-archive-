@@ -1,0 +1,106 @@
+-- Bw indicator
+
+local ref = gui.Reference("Visuals", "World")
+local box = gui.Groupbox(ref, "Survivor Status (Dynamic)", 320, 600, 305, 0)
+
+local enable    = gui.Checkbox(box, "sv_status.enable", "Enable Indicator", true)
+local fontSize  = gui.Slider(box, "sv_status.fontsize", "Font Size", 13, 8, 24)
+local fontBold  = gui.Checkbox(box, "sv_status.bold", "Bold Font", true)
+local xOffset   = gui.Slider(box, "sv_status.xoffset", "X Offset (Side)", 5, 0, 20)
+
+local fontCache = nil
+local lastFontState = ""
+local names = {"Nick", "Rochelle", "Coach", "Ellis", "Bill", "Zoey", "Louis", "Francis"}
+
+local function UpdateFont()
+    local state = tostring(fontSize:GetValue()) .. "|" .. tostring(fontBold:GetValue())
+    if state ~= lastFontState then
+        local weight = fontBold:GetValue() and 800 or 400
+        fontCache = draw.CreateFont("Tahoma", fontSize:GetValue(), weight)
+        lastFontState = state
+    end
+end
+
+local function GetBoxEdges(ent)
+    local mins   = ent:GetMins()
+    local maxs   = ent:GetMaxs()
+    local origin = ent:GetAbsOrigin()
+    if not mins or not maxs or not origin then return nil end
+
+    local ox, oy, oz = origin.x, origin.y, origin.z
+    local corners = {
+        {ox+mins.x, oy+mins.y, oz+mins.z}, {ox+mins.x, oy+maxs.y, oz+mins.z},
+        {ox+maxs.x, oy+mins.y, oz+mins.z}, {ox+maxs.x, oy+maxs.y, oz+mins.z},
+        {ox+mins.x, oy+mins.y, oz+maxs.z}, {ox+mins.x, oy+maxs.y, oz+maxs.z},
+        {ox+maxs.x, oy+mins.y, oz+maxs.z}, {ox+maxs.x, oy+maxs.y, oz+maxs.z},
+    }
+
+    local left, right, top, bottom
+    for _, c in ipairs(corners) do
+        local sx, sy = client.WorldToScreen(Vector3(c[1], c[2], c[3]))
+        if sx and sy then
+            left   = left   and math.min(left, sx)   or sx
+            right  = right  and math.max(right, sx)  or sx
+            top    = top    and math.min(top, sy)    or sy
+            bottom = bottom and math.max(bottom, sy) or sy
+        end
+    end
+    return left, right, top, bottom
+end
+
+callbacks.Register("Draw", function()
+    if not enable:GetValue() then return end
+
+    UpdateFont()
+    if fontCache then draw.SetFont(fontCache) end
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players then return end
+
+    for _, ent in pairs(players) do
+        if not ent or ent:IsDormant() or not ent:IsAlive() then goto continue end
+        if ent:GetTeamNumber() ~= 2 then goto continue end 
+
+        local left, right, top, bottom = GetBoxEdges(ent)
+        if not left or not right or not top or not bottom then goto continue end
+
+        local charID  = ent:GetPropInt("m_survivorCharacter") or 0
+        local name    = names[charID + 1] or "Survivor"
+        local isIncap = ent:GetPropInt("m_isIncapacitated") == 1
+        local isBW    = ent:GetPropInt("m_bIsOnThirdStrike") == 1
+
+        local r, g, b = 255, 255, 255
+        if isBW then
+            r, g, b = 255, 0, 0
+        end
+
+        local health = ent:GetHealth()
+        local infoText = name
+        if isIncap then
+            infoText = name .. " [" .. health .. "%]"
+        elseif isBW then
+            infoText = name .. " [BW]"
+        end
+
+        local tw, th = draw.GetTextSize(infoText)
+
+        local textX = (left + right) / 2 - (tw / 2)
+        local textY = top - th - 5
+
+        draw.Color(0, 0, 0, 150)
+        draw.TextShadow(textX, textY, infoText)
+
+        draw.Color(r, g, b, 255)
+        draw.Text(textX, textY, infoText)
+
+        if isBW and not isIncap then
+            draw.SetFont(fontCache)
+            local alert = "WARNING: BW"
+            local aw, ah = draw.GetTextSize(alert)
+            draw.Color(255, 0, 0, 255)
+            draw.Text((left + right) / 2 - (aw / 2), textY - ah, alert)
+        end
+
+        ::continue::
+    end
+end)
