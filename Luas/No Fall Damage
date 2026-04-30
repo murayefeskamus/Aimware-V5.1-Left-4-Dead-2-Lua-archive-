@@ -1,0 +1,15 @@
+just AddOutSeqNr goat again... and 10000 is enough but dunno its integer so i can do it. even 2^31 but idk never tried also i dont wanna engine error XDXDX
+
+-- No Fall Dmg 
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local nofall_key = gui.Keybox(ref, "ffi.nofall_key", "No Fall", 0)
+
+callbacks.Register("CreateMove", "nofall_logic", function(cmd)
+    local key = nofall_key:GetValue()
+    
+    if key ~= 0 and input.IsButtonDown(key) then
+        engine.AddOutSeqNr(20000)
+    end
+end)
+
