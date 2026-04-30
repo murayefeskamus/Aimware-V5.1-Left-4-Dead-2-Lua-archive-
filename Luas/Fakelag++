@@ -1,0 +1,28 @@
+local ref      = gui.Reference("Misc", "General", "Extra")
+local fakelag  = gui.Checkbox(ref, "misc.myfakelag", "Extended Fakelag", false)
+local fl_amount = gui.Slider(ref, "misc.fl_amount", "Choke Amount", 22, 1, 64, 1)
+
+local choked = 0
+
+callbacks.Register("CreateMove", "fakelag_cm", function(cmd)
+    if not fakelag:GetValue() then
+        choked = 0
+        return
+    end
+
+    local amount = fl_amount:GetValue()
+
+    if choked < amount then
+        cmd:SetSendPacket(false)
+        choked = choked + 1
+    else
+        cmd:SetSendPacket(true)
+        engine.AddOutSeqNr(choked)
+        choked = 0
+    end
+end)
+
+callbacks.Register("Unload", function()
+    choked = 0
+end)
+
