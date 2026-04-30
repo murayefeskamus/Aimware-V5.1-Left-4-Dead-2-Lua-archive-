@@ -1,0 +1,58 @@
+Created by Rexion ape
+
+
+--Auto Clicker Auto Ceil and Reg/Hitbox breaker for hunter 
+local KEY_F = 0x46 
+local KEY_G = 0x47 
+local KEY_Q = 0x51 
+
+local MAX_PITCH_F = 8.0
+local MAX_PITCH_Q = 12.0
+local FIXED_PITCH_G = 41.75
+
+local next_attack_time = 0
+local IN_ATTACK = 1
+
+callbacks.Register("CreateMove", function(cmd)
+    local local_player = entities.GetLocalPlayer()
+    if not local_player or not local_player:IsAlive() then return end
+
+    local my_team = local_player:GetPropInt("m_iTeamNum")
+    if my_team ~= 3 then return end
+
+    local zombie_class = local_player:GetPropInt("m_zombieClass")
+    if zombie_class ~= 3 then return end
+
+    local current_time = globals.CurTime()
+    local active = false
+
+    if input.IsButtonDown(KEY_F) then
+        active = true
+        local va = engine.GetViewAngles()
+        if va.x > MAX_PITCH_F then
+            engine.SetViewAngles(EulerAngles(MAX_PITCH_F, va.y, va.z))
+        end
+
+    elseif input.IsButtonDown(KEY_Q) then
+        active = true
+        local va = engine.GetViewAngles()
+        if va.x > MAX_PITCH_Q then
+            engine.SetViewAngles(EulerAngles(MAX_PITCH_Q, va.y, va.z))
+        end
+
+    elseif input.IsButtonDown(KEY_G) then
+        active = true
+        local va = engine.GetViewAngles()
+        engine.SetViewAngles(EulerAngles(FIXED_PITCH_G, va.y, va.z))
+    end
+
+    if active then
+        if current_time >= next_attack_time then
+            cmd.buttons = bit.bor(cmd.buttons, IN_ATTACK)
+            local random_delay = math.random(40, 60) / 1000
+            next_attack_time = current_time + random_delay
+        else
+            cmd.buttons = bit.band(cmd.buttons, bit.bnot(IN_ATTACK))
+        end
+    end
+end)
