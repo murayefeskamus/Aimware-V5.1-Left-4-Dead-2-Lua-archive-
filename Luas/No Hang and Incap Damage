@@ -1,0 +1,17 @@
+--nohangplusincap
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local auto_hang_enable = gui.Checkbox(ref, "auto.nohang", "Auto No Hang/Incap", false)
+
+callbacks.Register("CreateMove", "auto_hang_logic", function(cmd)
+    if not auto_hang_enable:GetValue() then return end
+
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then return end
+    local isHanging = pLocal:GetPropInt("m_isHangingFromLedge")
+    local isIncap = pLocal:GetPropInt("m_isIncapacitated")
+
+    if isHanging == 1 or isIncap == 1 then
+        engine.AddOutSeqNr(10000)
+    end
+end)
