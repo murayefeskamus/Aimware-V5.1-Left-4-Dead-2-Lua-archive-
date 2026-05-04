@@ -1,0 +1,301 @@
+--shibal
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "World ESP", 320, 400, 300, 0)
+
+local enable        = gui.Checkbox(gb, "world.enable",      "Enable World ESP",       true)
+local show_bounds   = gui.Checkbox(gb, "world.bounds",      "Boundary Warning",       true)
+local show_water    = gui.Checkbox(gb, "world.water",       "Water Level ESP",        true)
+local show_hud      = gui.Checkbox(gb, "world.hud",         "Info HUD",               true)
+local warn_dist     = gui.Slider(gb,   "world.warndist",    "Boundary Warn Distance", 500, 50, 2000)
+local bound_col     = gui.ColorPicker(gb, "world.bcol",     "Boundary Color", 255, 60,  60,  255)
+local water_col     = gui.ColorPicker(gb, "world.wcol",     "Water Color",    80,  180, 255, 255)
+
+local font_big  = draw.CreateFont("Tahoma", 18, 700)
+local font_sm   = draw.CreateFont("Tahoma", 13, 600)
+
+local worldEnt   = nil
+local worldMins  = nil
+local worldMaxs  = nil
+local waveHeight = 0
+local lastUpdate = 0
+
+local function GetWorldEntity()
+    for i = 0, 2 do
+        local e = entities.GetByIndex(i)
+        if e and e:GetClass() == "CWorld" then
+            return e
+        end
+    end
+    local found = entities.FindByClass("CWorld")
+    if found and found[1] then return found[1] end
+    return nil
+end
+
+local function UpdateWorldData()
+    local now = globals.RealTime()
+    if now - lastUpdate < 2 then return end
+    lastUpdate = now
+
+    if not worldEnt then
+        worldEnt = GetWorldEntity()
+    end
+    if not worldEnt then return end
+
+    local ok1, mins = pcall(function() return worldEnt:GetPropVector("m_WorldMins") end)
+    local ok2, maxs = pcall(function() return worldEnt:GetPropVector("m_WorldMaxs") end)
+    local ok3, wave = pcall(function() return worldEnt:GetPropFloat("m_flWaveHeight") end)
+
+    if ok1 and mins then worldMins = mins end
+    if ok2 and maxs then worldMaxs = maxs end
+    if ok3 and wave then waveHeight = wave end
+end
+
+local function GetBoundaryDistance(pos)
+    if not worldMins or not worldMaxs then return nil, nil end
+
+    local dx_min = math.abs(pos.x - worldMins.x)
+    local dx_max = math.abs(pos.x - worldMaxs.x)
+    local dy_min = math.abs(pos.y - worldMins.y)
+    local dy_max = math.abs(pos.y - worldMaxs.y)
+
+    local min_dist = math.min(dx_min, dx_max, dy_min, dy_max)
+
+    local wall = "?"
+    if min_dist == dx_min then wall = "BATI"
+    elseif min_dist == dx_max then wall = "DOGU"
+    elseif min_dist == dy_min then wall = "GUNEY"
+    elseif min_dist == dy_max then wall = "KUZEY"
+    end
+
+    return min_dist, wall
+end
+
+local function GetMapSize()
+    if not worldMins or not worldMaxs then return 0, 0, 0 end
+    local sx = math.abs(worldMaxs.x - worldMins.x)
+    local sy = math.abs(worldMaxs.y - worldMins.y)
+    local sz = math.abs(worldMaxs.z - worldMins.z)
+    return sx, sy, sz
+end
+
+local function IsInWater(pos)
+    if waveHeight <= 0 then return false end
+    return pos.z <= waveHeight
+end
+
+local function DistanceToWater(pos)
+    if waveHeight <= 0 then return nil end
+    return waveHeight - pos.z  -- pozitif = su altında, negatif = su üstünde
+end
+
+callbacks.Register("Draw", "world_esp", function()
+    if not enable:GetValue() then return end
+
+    UpdateWorldData()
+
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then return end
+
+    local mypos = lp:GetAbsOrigin()
+    local sw, sh = draw.GetScreenSize()
+
+    if show_bounds:GetValue() and worldMins and worldMaxs then
+        local dist, wall = GetBoundaryDistance(mypos)
+
+        if dist and dist < warn_dist:GetValue() then
+            local ratio  = 1 - (dist / warn_dist:GetValue())
+            local alpha  = math.floor(ratio * 255)
+            local blink  = math.floor(globals.RealTime() * 6) % 2 == 0
+
+            local br, bg, bb, _ = bound_col:GetValue()
+
+            draw.SetFont(font_big)
+
+            if blink then
+                local txt = "SINIR: " .. wall .. " [" .. math.floor(dist) .. " u]"
+                local tw, _  = draw.GetTextSize(txt)
+
+                draw.Color(0, 0, 0, math.floor(alpha * 0.7))
+                draw.FilledRect(sw/2 - tw/2 - 8, sh * 0.15 - 4,
+                                sw/2 + tw/2 + 8, sh * 0.15 + 28)
+
+                draw.Color(br, bg, bb, alpha)
+                draw.OutlinedRect(sw/2 - tw/2 - 8, sh * 0.15 - 4,
+                                  sw/2 + tw/2 + 8, sh * 0.15 + 28)
+
+                draw.Color(0, 0, 0, math.floor(alpha * 0.8))
+                draw.Text(sw/2 - tw/2 + 1, sh * 0.15 + 1, txt)
+                draw.Color(br, bg, bb, alpha)
+                draw.Text(sw/2 - tw/2, sh * 0.15, txt)
+            end
+
+            local barThick = math.floor(ratio * 20)
+            draw.Color(br, bg, bb, math.floor(alpha * 0.6))
+
+            if wall == "BATI"  then draw.FilledRect(0, 0, barThick, sh) end
+            if wall == "DOGU"  then draw.FilledRect(sw - barThick, 0, sw, sh) end
+            if wall == "GUNEY" then draw.FilledRect(0, sh - barThick, sw, sh) end
+            if wall == "KUZEY" then draw.FilledRect(0, 0, sw, barThick) end
+        end
+    end
+
+    if show_water:GetValue() and waveHeight > 0 then
+        local waterDist = DistanceToWater(mypos)
+        local wr, wg, wb, _ = water_col:GetValue()
+
+        if waterDist and waterDist > 0 then
+            local depth = math.floor(waterDist)
+
+            draw.SetFont(font_big)
+            local txt = "SU ALTINDA [" .. depth .. " u]"
+            local tw, _ = draw.GetTextSize(txt)
+
+            local overlayAlpha = math.min(math.floor(waterDist * 0.5), 120)
+            draw.Color(wr, wg, wb, overlayAlpha)
+            draw.FilledRect(0, 0, sw, sh)
+
+            draw.Color(0, 0, 0, 200)
+            draw.Text(sw/2 - tw/2 + 1, sh * 0.4 + 1, txt)
+            draw.Color(wr, wg, wb, 255)
+            draw.Text(sw/2 - tw/2, sh * 0.4, txt)
+
+        elseif waterDist and waterDist > -50 then
+            local alpha = math.floor((1 - math.abs(waterDist) / 50) * 200)
+            draw.SetFont(font_sm)
+            local txt = "SU YAKINDA [" .. math.floor(math.abs(waterDist)) .. " u]"
+            local tw, _ = draw.GetTextSize(txt)
+
+            draw.Color(0, 0, 0, math.floor(alpha * 0.7))
+            draw.Text(sw/2 - tw/2 + 1, sh * 0.45 + 1, txt)
+            draw.Color(wr, wg, wb, alpha)
+            draw.Text(sw/2 - tw/2, sh * 0.45, txt)
+        end
+
+        local segs    = 24
+        local radius  = 500
+        local wz      = waveHeight + 5
+
+        draw.Color(wr, wg, wb, 120)
+        local prev_sx, prev_sy = nil, nil
+        for i = 0, segs do
+            local angle = (i / segs) * math.pi * 2
+            local wx = mypos.x + math.cos(angle) * radius
+            local wy = mypos.y + math.sin(angle) * radius
+            local sx, sy = client.WorldToScreen(Vector3(wx, wy, wz))
+            if sx and sy then
+                if prev_sx and prev_sy then
+                    draw.Line(prev_sx, prev_sy, sx, sy)
+                end
+                prev_sx, prev_sy = sx, sy
+            end
+        end
+    end
+
+if worldMins and worldMaxs then
+    local mn = worldMins
+    local mx = worldMaxs
+
+    local corners = {
+        Vector3(mn.x, mn.y, mn.z),
+        Vector3(mn.x, mx.y, mn.z),
+        Vector3(mx.x, mx.y, mn.z),
+        Vector3(mx.x, mn.y, mn.z),
+        Vector3(mn.x, mn.y, mx.z),
+        Vector3(mn.x, mx.y, mx.z),
+        Vector3(mx.x, mx.y, mx.z),
+        Vector3(mx.x, mn.y, mx.z),
+    }
+
+    local sc = {}
+    for i, v in ipairs(corners) do
+        local sx, sy = client.WorldToScreen(v)
+        sc[i] = sx and {sx, sy} or nil
+    end
+
+    local function BL(i1, i2)
+        if sc[i1] and sc[i2] then
+
+            draw.Color(0, 0, 0, 80)
+            draw.Line(sc[i1][1]+1, sc[i1][2]+1, sc[i2][1]+1, sc[i2][2]+1)
+
+            draw.Color(255, 80, 80, 180)
+            draw.Line(sc[i1][1], sc[i1][2], sc[i2][1], sc[i2][2])
+        end
+    end
+
+    draw.Color(255, 80, 80, 180)
+    BL(1,2) BL(2,3) BL(3,4) BL(4,1)
+
+    draw.Color(255, 160, 0, 180)
+    BL(5,6) BL(6,7) BL(7,8) BL(8,5)
+
+    draw.Color(255, 255, 0, 120)
+    BL(1,5) BL(2,6) BL(3,7) BL(4,8)
+
+    for i, s in ipairs(sc) do
+        if s then
+            draw.Color(255, 255, 255, 200)
+            draw.FilledCircle(s[1], s[2], 3)
+        end
+    end
+end
+
+    if show_hud:GetValue() then
+        local mapW, mapH, mapZ = GetMapSize()
+
+        local lines = {}
+
+        if worldMins and worldMaxs then
+            table.insert(lines, {"Harita Boyutu:", string.format("%.0f x %.0f", mapW, mapH)})
+            table.insert(lines, {"Yükseklik:", string.format("%.0f u", mapZ)})
+            table.insert(lines, {"Mins:", string.format("%.0f, %.0f, %.0f", worldMins.x, worldMins.y, worldMins.z)})
+            table.insert(lines, {"Maxs:", string.format("%.0f, %.0f, %.0f", worldMaxs.x, worldMaxs.y, worldMaxs.z)})
+        end
+
+        if waveHeight > 0 then
+            table.insert(lines, {"Su Seviyesi:", string.format("%.1f u", waveHeight)})
+            local inWater = IsInWater(mypos)
+            table.insert(lines, {"Su Durumu:", inWater and "İÇİNDE" or "DIŞINDA"})
+        else
+            table.insert(lines, {"Su:", "Yok"})
+        end
+
+        if worldMins and worldMaxs then
+            local dist, wall = GetBoundaryDistance(mypos)
+            if dist then
+                table.insert(lines, {"En Yakın Sınır:", wall .. " [" .. math.floor(dist) .. " u]"})
+            end
+        end
+
+        local pad  = 8
+        local lh   = 16
+        local w    = 220
+        local h    = pad * 2 + 18 + #lines * lh
+        local hx   = 10
+        local hy   = sh - h - 10
+
+        draw.Color(0, 0, 0, 150)
+        draw.FilledRect(hx, hy, hx + w, hy + h)
+        draw.Color(80, 180, 255, 180)
+        draw.OutlinedRect(hx, hy, hx + w, hy + h)
+
+        draw.SetFont(font_sm)
+        draw.Color(80, 180, 255, 255)
+        draw.Text(hx + pad, hy + pad, "WORLD INFO")
+
+        draw.Color(80, 180, 255, 80)
+        draw.Line(hx, hy + pad + 16, hx + w, hy + pad + 16)
+
+        for i, row in ipairs(lines) do
+            local ly = hy + pad + 18 + (i-1) * lh
+
+            draw.Color(150, 150, 150, 220)
+            draw.Text(hx + pad, ly, row[1])
+
+            draw.Color(255, 255, 255, 220)
+            local tw, _ = draw.GetTextSize(row[2])
+            draw.Text(hx + w - tw - pad, ly, row[2])
+        end
+    end
+end)
