@@ -1,0 +1,111 @@
+aka I hate defib 
+
+
+local font   = draw.CreateFont("Tahoma", 13, 700)
+local ref    = gui.Reference("Visuals", "World")
+local gb     = gui.Groupbox(ref, "Dead Body ESP", 16, 500, 200, 0)
+
+local enable = gui.Checkbox(gb, "deadbody.enable", "Enable", true)
+local box    = gui.Checkbox(gb, "deadbody.box", "Box", true)
+local col    = gui.ColorPicker(gb, "deadbody.col", "Renk", 255, 50, 50, 255)
+
+local CHAR_NAMES = {
+    [0] = "Nick/Bill",
+    [1] = "Rochelle/Zoey",
+    [2] = "Coach/Francis",
+    [3] = "Ellis/Louis"
+}
+
+-- box hesaplama
+local function GetBox(ent)
+    local mins = ent:GetMins()
+    local maxs = ent:GetMaxs()
+    local origin = ent:GetAbsOrigin()
+
+    local points = {
+        Vector3(mins.x, mins.y, mins.z),
+        Vector3(mins.x, maxs.y, mins.z),
+        Vector3(maxs.x, maxs.y, mins.z),
+        Vector3(maxs.x, mins.y, mins.z),
+        Vector3(maxs.x, maxs.y, maxs.z),
+        Vector3(mins.x, maxs.y, maxs.z),
+        Vector3(mins.x, mins.y, maxs.z),
+        Vector3(maxs.x, mins.y, maxs.z)
+    }
+
+    local sx, sy = {}, {}
+
+    for i = 1, 8 do
+        local x, y = client.WorldToScreen(origin + points[i])
+        if not x then return nil end
+        sx[i], sy[i] = x, y
+    end
+
+    local left, right = sx[1], sx[1]
+    local top, bottom = sy[1], sy[1]
+
+    for i = 2, 8 do
+        left = math.min(left, sx[i])
+        right = math.max(right, sx[i])
+        top = math.min(top, sy[i])
+        bottom = math.max(bottom, sy[i])
+    end
+
+    return left, top, right, bottom
+end
+
+callbacks.Register("Draw", "deadbody_esp", function()
+    if not enable:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+
+    local mypos = me:GetAbsOrigin()
+    local r, g, b, a = col:GetValue()
+
+    for i = 1, 512 do
+        local ok, e = pcall(function() return entities.GetByIndex(i) end)
+        if not ok or not e then goto continue end
+
+        local ok2, cls = pcall(function() return e:GetClass() end)
+        if not ok2 or cls ~= "CSurvivorDeathModel" then goto continue end
+
+        local ok3, pos = pcall(function() return e:GetAbsOrigin() end)
+        if not ok3 or not pos then goto continue end
+
+        local sx, sy = client.WorldToScreen(pos + Vector3(0, 0, 20))
+        if not sx then goto continue end
+
+        local ok4, char = pcall(function() return e:GetPropInt("m_nCharacterType") end)
+        local name = CHAR_NAMES[ok4 and char or -1] or "Unknown"
+
+        local dist = (pos - mypos):Length()
+        local meters = math.floor(dist * 0.01905)
+
+        local txt = string.format("Dead Body [%s] (%dm)", name, meters)
+
+        draw.SetFont(font)
+        local tw, th = draw.GetTextSize(txt)
+
+        draw.Color(0, 0, 0, 160)
+        draw.FilledRect(sx - tw/2 - 4, sy - th - 4, sx + tw/2 + 4, sy + 4)
+
+        draw.Color(r, g, b, a)
+        draw.OutlinedRect(sx - tw/2 - 4, sy - th - 4, sx + tw/2 + 4, sy + 4)
+
+        draw.Color(r, g, b, a)
+        draw.Text(sx - tw/2, sy - th, txt)
+
+        draw.FilledCircle(sx, sy, 3)
+
+        if box:GetValue() then
+            local x1, y1, x2, y2 = GetBox(e)
+            if x1 then
+                draw.Color(r, g, b, 200)
+                draw.OutlinedRect(x1, y1, x2, y2)
+            end
+        end
+
+        ::continue::
+    end
+end)
