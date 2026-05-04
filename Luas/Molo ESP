@@ -1,0 +1,99 @@
+--Molo aka Inferno esp
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Inferno ESP", 320, 400, 300, 0)
+
+local enable     = gui.Checkbox(gb, "inferno.enable",    "Enable Inferno ESP",  true)
+local show_text  = gui.Checkbox(gb, "inferno.text",      "Show Fire Count",     true)
+local show_circle= gui.Checkbox(gb, "inferno.circle",    "Show Area Circle",    true)
+local segments   = gui.Slider(gb,   "inferno.segments",  "Circle Smoothness",   32, 8, 64)
+local radius_mul = gui.Slider(gb,   "inferno.radius",    "Radius Multiplier",   10, 5, 30)
+local colorpick  = gui.ColorPicker(gb, "inferno.color",  "Colour", 255, 80, 0, 255)
+
+local font = draw.CreateFont("Tahoma", 14, 700)
+
+
+local function DrawOutlinedText(x, y, text)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 220)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(255, 255, 255, 255)
+    draw.Text(x, y, text)
+end
+
+local function DrawGroundCircle(origin, radius, segs, r, g, b, a)
+    local prev_sx, prev_sy = nil, nil
+    local first_sx, first_sy = nil, nil
+
+    for i = 0, segs do
+        local angle = (i / segs) * (2 * math.pi)
+        local wx = origin.x + math.cos(angle) * radius
+        local wy = origin.y + math.sin(angle) * radius
+        local wz = origin.z
+
+        local sx, sy = client.WorldToScreen(Vector3(wx, wy, wz))
+
+        if sx and sy then
+            if prev_sx and prev_sy then
+                draw.Color(0, 0, 0, math.floor(a * 0.5))
+                draw.Line(prev_sx+1, prev_sy+1, sx+1, sy+1)
+                draw.Color(r, g, b, a)
+                draw.Line(prev_sx, prev_sy, sx, sy)
+            else
+                first_sx, first_sy = sx, sy
+            end
+            prev_sx, prev_sy = sx, sy
+        end
+    end
+
+    if prev_sx and prev_sy and first_sx and first_sy then
+        draw.Color(0, 0, 0, math.floor(a * 0.5))
+        draw.Line(prev_sx+1, prev_sy+1, first_sx+1, first_sy+1)
+        draw.Color(r, g, b, a)
+        draw.Line(prev_sx, prev_sy, first_sx, first_sy)
+    end
+end
+
+
+callbacks.Register("Draw", function()
+    if not enable:GetValue() then return end
+
+    local infernos = entities.FindByClass("CInferno")
+    if not infernos or #infernos == 0 then return end
+
+    local r, g, b, _ = colorpick:GetValue()
+    local segs        = segments:GetValue()
+    local rmul        = radius_mul:GetValue()
+
+    for _, inf in pairs(infernos) do
+        if inf:IsDormant() then goto continue end
+
+        local origin = inf:GetAbsOrigin()
+        if not origin then goto continue end
+
+        local count  = inf:GetPropInt("m_fireCount") or 0
+
+        local radius = math.max(80, count * rmul)
+
+        if show_circle:GetValue() then
+            -- Yanıp sönen alpha (ateş efekti)
+            local pulse = math.floor(180 + math.sin(globals.RealTime() * 4) * 50)
+            DrawGroundCircle(origin, radius, segs, r, g, b, pulse)
+
+            DrawGroundCircle(origin, radius * 0.6, segs, r, g, b, math.floor(pulse * 0.4))
+        end
+
+        if show_text:GetValue() then
+            local sx, sy = client.WorldToScreen(origin + Vector3(0, 0, 40))
+            if sx and sy then
+                local tw, _ = draw.GetTextSize("FIRE x" .. count)
+                DrawOutlinedText(sx - tw/2, sy, "FIRE x" .. count)
+            end
+        end
+
+        ::continue::
+    end
+end)
