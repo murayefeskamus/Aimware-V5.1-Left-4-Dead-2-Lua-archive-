@@ -1,0 +1,302 @@
+--idk whats that tbh
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Smoker Tongue ESP", 320, 400, 300, 0)
+
+local enable      = gui.Checkbox(gb, "stv3.enable",  "Enable Tongue ESP",    true)
+local show_circle = gui.Checkbox(gb, "stv3.circle",  "Range Circle",         true)
+local show_tip    = gui.Checkbox(gb, "stv3.tip",     "Tip Position",         true)
+local show_line   = gui.Checkbox(gb, "stv3.line",    "Tongue Line",          true)
+local show_victim = gui.Checkbox(gb, "stv3.victim",  "Victim Info",          true)
+local show_warn   = gui.Checkbox(gb, "stv3.warn",    "Warn If Target Is Me", true)
+local lbot_enable = gui.Checkbox(gb, "stv3.lbot",    "LBot → Tongue Tip",    false)
+local idle_col    = gui.ColorPicker(gb, "stv3.icol", "Idle Color",    100, 180, 255, 255)
+local grab_col    = gui.ColorPicker(gb, "stv3.gcol", "Grabbed Color", 255,  80,  80, 255)
+local tip_col     = gui.ColorPicker(gb, "stv3.tcol", "Tip Color",     255, 220,   0, 255)
+
+local font     = draw.CreateFont("Tahoma", 12, 700)
+local font_big = draw.CreateFont("Tahoma", 16, 700)
+
+local lbot_target_pos = nil
+
+local function DrawOutlinedText(x, y, text, r, g, b, fnt)
+    draw.SetFont(fnt or font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+local function DrawLine3D(p1, p2, r, g, b, a)
+    local sx1, sy1 = client.WorldToScreen(p1)
+    local sx2, sy2 = client.WorldToScreen(p2)
+    if not sx1 or not sx2 then return end
+    draw.Color(0, 0, 0, math.floor(a * 0.4))
+    draw.Line(sx1+1, sy1+1, sx2+1, sy2+1)
+    draw.Color(r, g, b, a)
+    draw.Line(sx1, sy1, sx2, sy2)
+end
+
+local function DrawCircle3D(origin, radius, segs, r, g, b, a)
+    local prev_x, prev_y = nil, nil
+    for i = 0, segs do
+        local angle = (i / segs) * math.pi * 2
+        local wx = origin.x + math.cos(angle) * radius
+        local wy = origin.y + math.sin(angle) * radius
+        local sx, sy = client.WorldToScreen(Vector3(wx, wy, origin.z + 5))
+        if sx and sy then
+            if prev_x and prev_y then
+                draw.Color(0, 0, 0, math.floor(a * 0.4))
+                draw.Line(prev_x+1, prev_y+1, sx+1, sy+1)
+                draw.Color(r, g, b, a)
+                draw.Line(prev_x, prev_y, sx, sy)
+            end
+            prev_x, prev_y = sx, sy
+        end
+    end
+end
+
+local smoker_cache = {}
+local last_scan    = 0
+
+local function ScanSmokers()
+    local now = globals.RealTime()
+    if now - last_scan < 1 then return end
+    last_scan = now
+    smoker_cache = {}
+    for i = 1, 512 do
+        local ok, e = pcall(function() return entities.GetByIndex(i) end)
+        if ok and e then
+            local ok2, cls = pcall(function() return e:GetClass() end)
+            if ok2 and cls == "Smoker" then
+                table.insert(smoker_cache, e)
+            end
+        end
+    end
+end
+
+callbacks.Register("CreateMove", "stv3_lbot", function(cmd)
+    if not lbot_enable:GetValue() then
+        lbot_target_pos = nil
+        return
+    end
+    if not lbot_target_pos then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local eyePos = lp:GetEyePosition()
+    if not eyePos then return end
+
+    local diff  = lbot_target_pos - eyePos
+    local len   = diff:Length()
+    if len == 0 then return end
+
+    local pitch = -math.asin(diff.z / len) * (180 / math.pi)
+    local yaw   = math.atan2(diff.y, diff.x) * (180 / math.pi)
+
+    local cur    = engine.GetViewAngles()
+    local speed  = 8
+
+    local dpitch = pitch - cur.x
+    local dyaw   = yaw   - cur.y
+    while dyaw >  180 do dyaw = dyaw - 360 end
+    while dyaw < -180 do dyaw = dyaw + 360 end
+
+    local np = cur.x + dpitch / speed
+    local ny = cur.y + dyaw   / speed
+    cmd:SetViewAngles(EulerAngles(np, ny, 0))
+    engine.SetViewAngles(EulerAngles(np, ny, 0))
+end)
+
+callbacks.Register("Draw", "stv3_draw", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local myidx  = lp:GetIndex()
+    local mypos  = lp:GetAbsOrigin()
+    local sw, sh = draw.GetScreenSize()
+    local now    = globals.RealTime()
+
+    ScanSmokers()
+    lbot_target_pos = nil
+
+    local r_idle, g_idle, b_idle, a_idle = idle_col:GetValue()
+    local r_grab, g_grab, b_grab, a_grab = grab_col:GetValue()
+    local r_tip,  g_tip,  b_tip,  _      = tip_col:GetValue()
+
+    for _, smoker in ipairs(smoker_cache) do
+        local ok, spos = pcall(function() return smoker:GetAbsOrigin() end)
+        if not ok or not spos then goto skip_smoker end
+
+        local ok2, victHandle = pcall(function()
+            return smoker:GetPropInt("m_tongueVictim")
+        end)
+        local hasVictim = ok2 and victHandle and victHandle > 0
+
+        local cr, cg, cb = hasVictim and r_grab or r_idle,
+                           hasVictim and g_grab or g_idle,
+                           hasVictim and b_grab or b_idle
+        local ca = hasVictim and a_grab or a_idle
+
+        local pulse = hasVictim and 1.0 or ((math.sin(now * 2) + 1) / 2 * 0.1 + 0.9)
+        DrawCircle3D(spos, 750 * pulse, 48, cr, cg, cb, hasVictim and ca or math.floor(ca * 0.5))
+
+        DrawCircle3D(spos, 200, 32, 255, 80, 80, math.floor(ca * 0.25))
+
+        local smsx, smsy = client.WorldToScreen(spos + Vector3(0, 0, 80))
+        if smsx and smsy then
+            local sname  = smoker:GetName() or "Smoker"
+            local dist_m = string.format("%.0fm", (spos - mypos):Length() * 0.01905)
+
+            local ntw, _ = draw.GetTextSize(sname)
+            DrawOutlinedText(smsx - ntw/2, smsy - 30, sname, cr, cg, cb)
+
+            local dtw, _ = draw.GetTextSize(dist_m)
+            DrawOutlinedText(smsx - dtw/2, smsy - 16, dist_m, 180, 180, 180)
+        end
+
+        ::skip_smoker::
+    end
+
+
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+
+    for _, ent in pairs(players) do
+        if ent:IsDormant() then goto continue end
+
+        local ok1, tongueOwnerHandle = pcall(function()
+            return ent:GetPropInt("m_tongueOwner")
+        end)
+        local ok2, isHanging = pcall(function()
+            return ent:GetPropInt("m_isHangingFromTongue")
+        end)
+        local ok3, isProne = pcall(function()
+            return ent:GetPropInt("m_isProneTongueDrag")
+        end)
+        local ok4, pullDir = pcall(function()
+            return ent:GetPropVector("m_initialTonguePullDir")
+        end)
+
+        local hasOwner = ok1 and tongueOwnerHandle and tongueOwnerHandle > 0
+
+        if not hasOwner then goto continue end
+
+        local smokerEnt = entities.GetByIndex(tongueOwnerHandle % 2048)
+
+        local victPos = ent:GetAbsOrigin()
+        if not victPos then goto continue end
+
+        local tipPos = nil
+        local tongues = entities.FindByClass("CTongue") or {}
+        for _, t in pairs(tongues) do
+            local ok_t, tp = pcall(function()
+                return t:GetPropVector("m_tipPosition")
+            end)
+            if ok_t and tp then
+                tipPos = tp
+                break
+            end
+        end
+
+        local smokerPos = smokerEnt and smokerEnt:GetAbsOrigin()
+
+        if show_tip:GetValue() and tipPos then
+            local tx, ty = client.WorldToScreen(tipPos)
+            if tx and ty then
+                draw.Color(0, 0, 0, 180)
+                draw.FilledCircle(tx+1, ty+1, 6)
+                draw.Color(r_tip, g_tip, b_tip, 220)
+                draw.FilledCircle(tx, ty, 6)
+                draw.Color(255, 255, 255, 180)
+                draw.OutlinedCircle(tx, ty, 6)
+
+                local pr2 = math.floor(6 + math.sin(now * 8) * 3)
+                draw.Color(r_tip, g_tip, b_tip, 80)
+                draw.OutlinedCircle(tx, ty, pr2 + 4)
+            end
+        end
+
+        if show_line:GetValue() and smokerPos and tipPos then
+            DrawLine3D(smokerPos + Vector3(0,0,60), tipPos, r_grab, g_grab, b_grab, a_grab)
+        end
+
+        if show_victim:GetValue() then
+            local vsx, vsy = client.WorldToScreen(victPos + Vector3(0, 0, 90))
+            if vsx and vsy then
+                local off = 0
+
+                local vname = ent:GetName() or "?"
+                local ntw, _ = draw.GetTextSize(vname)
+                DrawOutlinedText(vsx - ntw/2, vsy - off, vname, 255, 80, 80)
+                off = off + 15
+
+                if ok2 and isHanging == 1 then
+                    local htxt = "⬆ ASILI"
+                    local htw, _ = draw.GetTextSize(htxt)
+                    DrawOutlinedText(vsx - htw/2, vsy - off, htxt, 255, 150, 50)
+                    off = off + 15
+                elseif ok3 and isProne == 1 then
+                    local ptxt = "⬇ SÜRÜKLENIYOR"
+                    local ptw, _ = draw.GetTextSize(ptxt)
+                    DrawOutlinedText(vsx - ptw/2, vsy - off, ptxt, 255, 100, 100)
+                    off = off + 15
+                end
+
+                if smokerEnt then
+                    local stxt = "← " .. (smokerEnt:GetName() or "Smoker")
+                    local stw, _ = draw.GetTextSize(stxt)
+                    DrawOutlinedText(vsx - stw/2, vsy - off, stxt, 200, 100, 255)
+                    off = off + 15
+                end
+
+                if ok4 and pullDir then
+                    local dtxt = string.format("Yön: %.0f°",
+                        math.atan2(pullDir.y, pullDir.x) * (180/math.pi))
+                    local dtw, _ = draw.GetTextSize(dtxt)
+                    DrawOutlinedText(vsx - dtw/2, vsy - off, dtxt, 180, 180, 180)
+                end
+
+                if smokerPos then
+                    DrawLine3D(victPos + Vector3(0,0,50),
+                               smokerPos + Vector3(0,0,60), 255, 80, 80, 150)
+                end
+            end
+        end
+
+        if show_warn:GetValue() and ent:GetIndex() == myidx then
+            if lbot_enable:GetValue() and tipPos then
+                lbot_target_pos = tipPos
+            end
+
+            if math.floor(now * 5) % 2 == 0 then
+                local wtxt = " SMOKER SENI YAKALIYOR!"
+                draw.SetFont(font_big)
+                local tw, _ = draw.GetTextSize(wtxt)
+
+                draw.Color(0, 0, 0, 180)
+                draw.FilledRect(sw/2 - tw/2 - 8, sh * 0.15,
+                               sw/2 + tw/2 + 8, sh * 0.15 + 30)
+                draw.Color(255, 50, 50, 220)
+                draw.OutlinedRect(sw/2 - tw/2 - 8, sh * 0.15,
+                                 sw/2 + tw/2 + 8, sh * 0.15 + 30)
+                draw.Color(255, 50, 50, 255)
+                draw.Text(sw/2 - tw/2, sh * 0.15 + 4, wtxt)
+            end
+
+            local pulse = (math.sin(now * 6) + 1) / 2
+            draw.Color(255, 50, 50, math.floor(pulse * 150))
+            draw.OutlinedRect(2, 2, sw-2, sh-2)
+            draw.OutlinedRect(4, 4, sw-4, sh-4)
+        end
+
+        ::continue::
+    end
+end)
+
+callbacks.Register("Unload", function()
+    lbot_target_pos = nil
+end)
