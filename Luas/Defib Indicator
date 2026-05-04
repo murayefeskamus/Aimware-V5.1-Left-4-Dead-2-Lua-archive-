@@ -1,0 +1,64 @@
+--defib (sag ustte olcak ona gore)
+local menu = gui.Tab(gui.Reference("Visuals"), "defib_tab", "Defib Display")
+local defib_checkbox = gui.Checkbox(menu, "defib_display_enabled", "Defib Timer Göster", true)
+
+local active = false
+local endTime = 0
+local status = ""
+local lastUpdate = 0
+
+client.AllowListener("defibrillator_begin")
+client.AllowListener("defibrillator_used")
+client.AllowListener("defibrillator_interrupted")
+client.AllowListener("defibrillator_used_fail")
+
+callbacks.Register("FireGameEvent", function(e)
+    if not defib_checkbox:GetValue() then return end
+
+    local name = e:GetName()
+    if name == "defibrillator_begin" then
+        active = true
+        endTime = globals.RealTime() + 3
+        status = "Defib basladi"
+        lastUpdate = globals.RealTime()
+
+    elseif name == "defibrillator_interrupted" then
+        active = false
+        status = "Defib iptal"
+        lastUpdate = globals.RealTime()
+
+    elseif name == "defibrillator_used_fail" then
+        active = false
+        status = "Defib fail"
+        lastUpdate = globals.RealTime()
+
+    elseif name == "defibrillator_used" then
+        active = false
+        status = "Defib tamamlandi"
+        lastUpdate = globals.RealTime()
+    end
+end)
+
+callbacks.Register("Draw", function()
+    if not defib_checkbox:GetValue() then return end
+
+    local sw, sh = draw.GetScreenSize()
+
+    local drawTime = 5 
+    if status ~= "" and globals.RealTime() - lastUpdate < drawTime then
+        local text = status
+        if active then
+            local timeLeft = math.max(0, endTime - globals.RealTime())
+            text = status .. " | " .. string.format("%.1f", timeLeft)
+        end
+
+        local tw, th = draw.GetTextSize(text)
+        local x, y = sw - tw - 20, 20
+
+        draw.Color(0, 0, 0, 150)
+        draw.FilledRect(x - 5, y - 5, x + tw + 5, y + th + 5)
+
+        draw.Color(255, 255, 255, 255)
+        draw.Text(x, y, text)
+    end
+end)
