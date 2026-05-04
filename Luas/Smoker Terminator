@@ -1,0 +1,183 @@
+Its not mine credits to fionnade ig i found it from forum long time ago
+
+
+
+local misc_extra = gui.Reference("Misc", "General", "Extra")
+
+local enable_rbot_on_grab = gui.Checkbox(misc_extra, "rbot_on_tongue", "Enable Ragebot", true)
+enable_rbot_on_grab:SetDescription("Ragebot: On if caught, off after kill")
+local enable_lbot_on_release = gui.Checkbox(misc_extra, "lbot_on_release", "Enable Legitbot", true)
+enable_lbot_on_release:SetDescription("Legitbot: On if release")
+local rbot_cooldown_slider = gui.Slider(misc_extra, "rbot_cooldown", "Ragebot CD", 10, 1, 60)
+rbot_cooldown_slider:SetDescription("Ragebot reactivation delay after kill")
+gui.Text(misc_extra, "If disabled, just lock view on target")
+
+local target_pitch, target_yaw = nil, nil
+local is_tongue_active = false
+local aim_start_time = 0
+local is_aiming = false
+local target_ent_index = nil
+local last_rbot_disable_time = 0
+local rbot_cooldown_active = false
+local last_smoker_ent_index = nil
+local last_grab_time = 0
+
+local function get_eye_position(ent)
+    local origin = ent:GetAbsOrigin()
+    local view_offset = ent:GetPropVector("m_vecViewOffset[0]")
+    if origin and view_offset then
+        return origin + view_offset
+    end
+end
+
+local function vector_angles(from, to)
+    local dx, dy, dz = to.x - from.x, to.y - from.y, to.z - from.z
+    local yaw = math.deg(math.atan2(dy, dx))
+    if yaw < 0 then yaw = yaw + 360 end
+    local hyp = math.sqrt(dx * dx + dy * dy)
+    local pitch = math.deg(math.atan(-dz / hyp))
+    return pitch, yaw
+end
+
+client.AllowListener("tongue_grab")
+client.AllowListener("tongue_release")
+client.AllowListener("player_death")
+
+callbacks.Register("FireGameEvent", function(event)
+    local name = event:GetName()
+
+    if name == "tongue_grab" then  
+        local victim_index = client.GetPlayerIndexByUserID(event:GetInt("victim"))
+        if victim_index ~= client.GetLocalPlayerIndex() then return end
+
+        if rbot_cooldown_active and (globals.CurTime() - last_rbot_disable_time) < rbot_cooldown_slider:GetValue() then
+            return
+        end
+        rbot_cooldown_active = false
+
+        local attacker = entities.GetByUserID(event:GetInt("userid"))
+        if not attacker or not attacker:IsAlive() then return end
+
+        last_smoker_ent_index = attacker:GetIndex()
+        last_grab_time = globals.CurTime()
+        is_tongue_active = true
+        target_ent_index = last_smoker_ent_index
+
+        local local_player = entities.GetLocalPlayer()
+        if not local_player then return end
+
+        local my_eye = get_eye_position(local_player)
+        local smoker_pos = attacker:GetHitboxPosition(10)
+        if not my_eye or not smoker_pos then return end
+
+        target_pitch, target_yaw = vector_angles(my_eye, smoker_pos)
+        aim_start_time = globals.CurTime()
+        is_aiming = true
+
+        if enable_rbot_on_grab:GetValue() then
+            gui.SetValue("rbot.master", 1)
+        end
+
+    elseif name == "tongue_release" then
+        local victim_index = client.GetPlayerIndexByUserID(event:GetInt("victim"))
+        if victim_index ~= client.GetLocalPlayerIndex() then return end
+
+        gui.SetValue("rbot.master", 0)
+        is_tongue_active = false
+        is_aiming = false
+        target_ent_index = nil
+
+        if enable_lbot_on_release:GetValue() then
+            gui.SetValue("lbot.master", 1)
+        end
+
+    elseif name == "player_death" then
+        local victim_userid = event:GetInt("userid")
+        local attacker_userid = event:GetInt("attacker")
+        local victim_ent = entities.GetByUserID(victim_userid)
+        local attacker_ent = entities.GetByUserID(attacker_userid)
+        local local_player = entities.GetLocalPlayer()
+        
+        if not victim_ent or not local_player then return end
+
+        if victim_ent:GetIndex() == local_player:GetIndex() then
+            gui.SetValue("rbot.master", 0)
+            is_tongue_active = false
+            is_aiming = false
+            target_ent_index = nil
+            rbot_cooldown_active = false
+            last_rbot_disable_time = 0
+            last_smoker_ent_index = nil
+            return
+        end
+
+        if last_smoker_ent_index and victim_ent:GetIndex() == last_smoker_ent_index then
+            if attacker_ent and attacker_ent:GetIndex() == local_player:GetIndex() and 
+               enable_rbot_on_grab:GetValue() and 
+               (globals.CurTime() - last_grab_time) <= 1.0 then
+                rbot_cooldown_active = true
+                last_rbot_disable_time = globals.CurTime()
+            end
+            
+            gui.SetValue("rbot.master", 0)
+            is_tongue_active = false
+            is_aiming = false
+            target_ent_index = nil
+            last_smoker_ent_index = nil
+        end
+    end
+end)
+
+callbacks.Register("CreateMove", function(cmd)
+    if is_aiming and target_pitch and target_yaw then
+        local target_valid = false
+        if target_ent_index then
+            local ent = entities.GetByIndex(target_ent_index)
+            target_valid = ent and ent:IsAlive()
+        end
+
+        if globals.CurTime() - aim_start_time <= 0.5 and target_valid and is_tongue_active then
+            local ang = engine.GetViewAngles()
+            ang.x = target_pitch
+            ang.y = target_yaw
+            engine.SetViewAngles(ang)
+            cmd:SetSendPacket(true)
+        else
+            is_aiming = false
+            target_pitch, target_yaw = nil, nil
+            target_ent_index = nil
+        end
+    end
+end)
+
+callbacks.Register("Draw", function()
+    if rbot_cooldown_active then
+        local now = globals.CurTime()
+        local duration = rbot_cooldown_slider:GetValue()
+
+        if last_rbot_disable_time <= 0 or now < last_rbot_disable_time then
+            rbot_cooldown_active = false
+            return
+        end
+
+        local elapsed = now - last_rbot_disable_time
+        local remaining = duration - elapsed
+
+        if remaining <= 0 then
+            rbot_cooldown_active = false
+        else
+            local screenW, screenH = draw.GetScreenSize()
+            local barWidth, barHeight = 300, 20
+            local barX, barY = (screenW - barWidth) / 2, screenH * 0.85
+
+            local progress = math.min(elapsed / duration, 1.0)
+            draw.Color(0, 0, 0, 180)
+            draw.FilledRect(barX, barY, barX + barWidth, barY + barHeight)
+            draw.Color(255, 100, 100, 255)
+            draw.FilledRect(barX, barY, barX + barWidth * progress, barY + barHeight)
+            draw.Color(255, 255, 255, 255)
+            draw.OutlinedRect(barX, barY, barX + barWidth, barY + barHeight)
+            draw.Text(barX + barWidth / 2 - 50, barY - 18, string.format("Rage cooldown: %.1fs", remaining))
+        end
+    end
+end)
