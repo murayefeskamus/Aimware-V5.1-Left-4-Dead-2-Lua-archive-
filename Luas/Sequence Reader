@@ -1,0 +1,63 @@
+--Sequence Reader
+
+local ref = gui.Reference("Visuals", "Other")
+local gb  = gui.Groupbox(ref, "Sequence Reader", 325, 315, 300, 0)
+
+local enable      = gui.Checkbox(gb, "seqr.enable", "Enable Sequence Reader", true)
+local show_team   = gui.Checkbox(gb, "seqr.team",   "Show Team",              true)
+local show_enemy  = gui.Checkbox(gb, "seqr.enemy",  "Show Enemy",             true)
+local team_col    = gui.ColorPicker(gb, "seqr.teamcol",  "Team Color",  100, 255, 100, 255)
+local enemy_col   = gui.ColorPicker(gb, "seqr.enemycol", "Enemy Color", 255, 100, 100, 255)
+
+local font = draw.CreateFont("Tahoma", 12, 600)
+
+local function DrawOutlinedText(x, y, text, r, g, b, a)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r, g, b, a)
+    draw.Text(x, y, text)
+end
+
+callbacks.Register("Draw", "seq_reader", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+    for _, ent in pairs(players) do
+        if not ent:IsAlive() then goto continue end
+        if ent:IsDormant() then goto continue end
+        if ent:GetIndex() == lp:GetIndex() then goto continue end
+
+        local is_team = (ent:GetTeamNumber() == lp:GetTeamNumber())
+
+        if is_team  and not show_team:GetValue()  then goto continue end
+        if not is_team and not show_enemy:GetValue() then goto continue end
+
+        local seq = ent:GetPropInt("m_nSequence") or 0
+
+        local origin = ent:GetAbsOrigin()
+        if not origin then goto continue end
+
+        local sx, sy = client.WorldToScreen(origin + Vector3(0, 0, 85))
+        if not sx or not sy then goto continue end
+
+        local r, g, b
+        if is_team then
+            r, g, b, _ = team_col:GetValue()
+        else
+            r, g, b, _ = enemy_col:GetValue()
+        end
+
+        local text = "seq=" .. seq
+        local tw, _ = draw.GetTextSize(text)
+        DrawOutlinedText(sx - tw/2, sy, text, r, g, b, 255)
+
+        ::continue::
+    end
+end)
