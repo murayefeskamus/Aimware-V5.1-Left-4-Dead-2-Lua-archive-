@@ -1,0 +1,11 @@
+local ref     = gui.Reference("Misc", "General", "Extra")
+local bp_on   = gui.Checkbox(ref, "misc.bugpause", "Bug Pause", false)
+
+callbacks.Register("CreateMove", "bugpause_cm", function(cmd)
+    if not bp_on:GetValue() then return end
+    client.Command("bugpause", false)
+end)
+
+callbacks.Register("Unload", function()
+    bp_on:SetValue(false)
+end)
