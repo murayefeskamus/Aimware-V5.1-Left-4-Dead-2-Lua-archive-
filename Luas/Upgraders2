@@ -1,0 +1,111 @@
+--betterone w2s
+
+local ref = gui.Reference("Visuals", "Other")
+local gb  = gui.Groupbox(ref, "Upgrade Ammo ESP", 325, 315, 300, 0)
+
+local enable     = gui.Checkbox(gb, "upg.enable",  "Enable Upgrade Ammo ESP", true)
+local show_self  = gui.Checkbox(gb, "upg.self",    "Show Self",               true)
+local show_team  = gui.Checkbox(gb, "upg.team",    "Show Team",               true)
+local exp_col    = gui.ColorPicker(gb, "upg.exp",  "Explosive Rengi",  255, 100,   0, 255)
+local inc_col    = gui.ColorPicker(gb, "upg.inc",  "Incendiary Rengi", 255, 200,  50, 255)
+
+local font = draw.CreateFont("Tahoma", 12, 700)
+
+local function DrawOutlinedText(x, y, text, r, g, b)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+local function GetUpgradeInfo(wep)
+    if not wep then return nil end
+    local ok, upg = pcall(function()
+        return wep:GetPropInt("m_nUpgradedPrimaryAmmoLoaded")
+    end)
+    if not ok or not upg or upg == 0 then return nil end
+
+    return upg
+end
+
+local function GetUpgradeType(player)
+    local has_exp = false
+    local has_inc = false
+    for slot = 0, 5 do
+        local ok, w = pcall(function()
+            return player:GetPropEntity("m_hMyWeapons", slot)
+        end)
+        if ok and w then
+            local cls = w:GetClass()
+            if cls == "CItemUpgradePackExplosive"  then has_exp = true end
+            if cls == "CItemUpgradePackIncendiary" then has_inc = true end
+        end
+    end
+    return has_exp, has_inc
+end
+
+callbacks.Register("Draw", "upg_ammo_esp", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then return end
+
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+    for _, ent in pairs(players) do
+        if not ent:IsAlive() then goto continue end
+        if ent:IsDormant() then goto continue end
+
+        local is_self = ent:GetIndex() == lp:GetIndex()
+        local is_team = ent:GetTeamNumber() == lp:GetTeamNumber()
+
+        if is_self  and not show_self:GetValue() then goto continue end
+        if not is_self and not show_team:GetValue() then goto continue end
+        if not is_team then goto continue end
+
+        local wep = ent:GetPropEntity("m_hActiveWeapon")
+        local upg  = GetUpgradeInfo(wep)
+        if not upg then goto continue end
+
+        local has_exp, has_inc = GetUpgradeType(ent)
+
+        local origin = ent:GetAbsOrigin()
+        if not origin then goto continue end
+
+        local sx, sy = client.WorldToScreen(origin + Vector3(0, 0, 90))
+        if not sx or not sy then goto continue end
+
+        local label, r, g, b
+        if has_inc then
+            r, g, b, _ = inc_col:GetValue()
+            label = "🔥 INC x" .. upg
+        elseif has_exp then
+            r, g, b, _ = exp_col:GetValue()
+            label = "💥 EXP x" .. upg
+        else
+            r, g, b = 255, 255, 255
+            label = "⚡ UPG x" .. upg
+        end
+
+        local tw, _ = draw.GetTextSize(label)
+        DrawOutlinedText(sx - tw/2, sy, label, r, g, b)
+
+        local barW  = 50
+        local barH  = 5
+        local barX  = sx - barW/2
+        local barY  = sy + 14
+        local ratio = math.min(upg / 30, 1.0) 
+
+        draw.Color(0, 0, 0, 160)
+        draw.FilledRect(barX, barY, barX + barW, barY + barH)
+        draw.Color(r, g, b, 200)
+        draw.FilledRect(barX, barY, barX + math.floor(barW * ratio), barY + barH)
+        draw.Color(0, 0, 0, 180)
+        draw.OutlinedRect(barX, barY, barX + barW, barY + barH)
+
+        ::continue::
+    end
+end)
