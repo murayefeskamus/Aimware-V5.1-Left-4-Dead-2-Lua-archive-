@@ -1,0 +1,101 @@
+--Chainsaw fuel
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Chainsaw ESP", 320, 400, 300, 0)
+
+local enable     = gui.Checkbox(gb, "chainsaw.enable",  "Enable Chainsaw ESP", true)
+local show_bar   = gui.Checkbox(gb, "chainsaw.bar",     "Show Fuel Bar",       true)
+local show_state = gui.Checkbox(gb, "chainsaw.state",   "Show State",          true)
+local colorpick  = gui.ColorPicker(gb, "chainsaw.color","Colour", 255, 180, 0, 255)
+
+local font = draw.CreateFont("Tahoma", 13, 700)
+
+local FUEL_MAX = 30
+
+local STATE_NAMES = {
+    [0] = "OFF",
+    [1] = "STARTING",
+    [2] = "ON",
+    [3] = "DYING",
+}
+
+local function DrawOutlinedText(x, y, text, r, g, b, a)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r, g, b, a)
+    draw.Text(x, y, text)
+end
+
+callbacks.Register("Draw", "chainsaw_esp", function()
+    if not enable:GetValue() then return end
+
+    local r, g, b, _ = colorpick:GetValue()
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+
+    for _, ent in pairs(players) do
+        if not ent:IsAlive() then goto continue end
+        if ent:IsDormant() then goto continue end
+
+        local wep = ent:GetPropEntity("m_hActiveWeapon")
+        if not wep then goto continue end
+        if wep:GetClass() ~= "CChainsaw" then goto continue end
+
+        local fuel    = wep:GetPropInt("m_iClip1")  or 0
+        local state   = wep:GetPropInt("m_iState")  or 0
+        local hitting = wep:GetPropInt("m_bHitting") or 0
+
+        local origin = ent:GetAbsOrigin()
+        local sx, sy = client.WorldToScreen(origin + Vector3(0, 0, 80))
+        if not sx or not sy then goto continue end
+
+        local ratio = math.max(0, math.min(1, fuel / FUEL_MAX))
+
+        local fr = math.floor(255 * (1 - ratio))
+        local fg = math.floor(255 * ratio)
+        local fb = 0
+
+        if show_state:GetValue() then
+            local sname = STATE_NAMES[state] or "?"
+            if hitting == 1 then sname = "HITTING" end
+
+            local sr, sg, sb = 180, 180, 180
+            if hitting == 1 then
+                sr, sg, sb = 255, 0, 0
+            elseif state == 2 then
+                sr, sg, sb = 255, 180, 0
+            end
+
+            local tw, _ = draw.GetTextSize(sname)
+            DrawOutlinedText(sx - tw/2, sy, sname, sr, sg, sb, 255)
+        end
+
+        if show_bar:GetValue() then
+            local barW = 60
+            local barH = 6
+            local barX = sx - barW/2
+            local barY = sy + 18
+
+            draw.Color(0, 0, 0, 180)
+            draw.FilledRect(barX, barY, barX + barW, barY + barH)
+
+            draw.Color(fr, fg, fb, 255)
+            draw.FilledRect(barX, barY, barX + math.floor(barW * ratio), barY + barH)
+
+            draw.Color(0, 0, 0, 200)
+            draw.OutlinedRect(barX, barY, barX + barW, barY + barH)
+
+            local pct = fuel .. "/" .. FUEL_MAX
+            local tw, _ = draw.GetTextSize(pct)
+            draw.Color(0, 0, 0, 180)
+            draw.Text(sx - tw/2 + 1, barY + barH + 3, pct)
+            draw.Color(255, 255, 255, 200)
+            draw.Text(sx - tw/2, barY + barH + 2, pct)
+        end
+
+        ::continue::
+    end
+end)
