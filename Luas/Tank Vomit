@@ -1,0 +1,39 @@
+local font = draw.CreateFont("Tahoma", 16, 700)
+local msgs = {}
+
+client.AllowListener("vomit_bomb_tank")
+
+callbacks.Register("FireGameEvent", function(event)
+    if event:GetName() ~= "vomit_bomb_tank" then return end
+    table.insert(msgs, 1, {
+        time   = globals.RealTime(),
+        expire = globals.RealTime() + 4.0,
+    })
+    if #msgs > 5 then table.remove(msgs) end
+end)
+
+callbacks.Register("Draw", "tankvomit_draw", function()
+    if #msgs == 0 then return end
+    local now    = globals.RealTime()
+    local sw, _  = draw.GetScreenSize()
+    draw.SetFont(font)
+
+    local i = 1
+    while i <= #msgs do
+        local m = msgs[i]
+        if now > m.expire then
+            table.remove(msgs, i)
+        else
+            local age   = now - m.time
+            local alpha = age < 3.0 and 255 or math.max(0, math.floor(255*(1-(age-3.0))))
+
+            local txt = "TANK VOMITTED"
+            local tw, _ = draw.GetTextSize(txt)
+            draw.Color(0,0,0,math.floor(alpha*0.6))
+            draw.Text(sw - tw - 9, 40 + (i-1)*22 + 1, txt)
+            draw.Color(180,50,255,alpha)
+            draw.Text(sw - tw - 10, 40 + (i-1)*22, txt)
+            i = i + 1
+        end
+    end
+end)
