@@ -1,0 +1,172 @@
+
+local ref = gui.Reference("Visuals", "Other")
+local box = gui.Groupbox(ref, "Spotify", 325, 315, 300, 0)
+local enable   = gui.Checkbox(box, "spotify.enable", "Enable",    true)
+local keyPrev  = gui.Keybox(box, "spotify.prev",    "Prev Key",  0)
+local keyNext  = gui.Keybox(box, "spotify.next",    "Next Key",  0)
+local keyPause = gui.Keybox(box, "spotify.pause",   "Pause Key", 0)
+
+local font = draw.CreateFont("Segoe UI", 14, 700)
+local songText    = "Spotify acik degil"
+local lastCheck   = 0
+local lastKeys    = {prev=false, next=false, pause=false}
+local spotifyHwnd = nil 
+
+pcall(function()
+    ffi.cdef[[
+        void* FindWindowExA(void* parent, void* child, const char* cls, const char* title);
+        void* FindWindowA(const char* cls, const char* title);
+        int   GetWindowTextA(void* hwnd, char* buf, int max);
+        bool  IsWindowVisible(void* hwnd);
+        bool  IsWindow(void* hwnd);
+        long  SendMessageA(void* hwnd, unsigned int msg, unsigned int wp, long lp);
+    ]]
+end)
+
+local WM_APPCOMMAND               = 0x319
+local APPCOMMAND_MEDIA_NEXTTRACK  = 0xB0000
+local APPCOMMAND_MEDIA_PREVTRACK  = 0xC0000
+local APPCOMMAND_MEDIA_PLAY_PAUSE = 0xE0000
+
+local BLACKLIST = {
+    "Google Chrome", "Chrome", "Firefox", "Edge",
+    "Claude", "Visual Studio", "Notepad", "Explorer",
+    "GitHub", "YouTube", "Twitch", "Discord",
+}
+
+local function isBlacklisted(title)
+    for _, b in ipairs(BLACKLIST) do
+        if title:find(b, 1, true) then return true end
+    end
+    return false
+end
+
+local function FindSpotifyHwnd()
+    local ok, result = pcall(function()
+        local u = ffi.load("user32")
+        local buf = ffi.new("char[512]")
+
+        local hwnd = u.FindWindowA("Chrome_WidgetWin_1", nil)
+        if hwnd ~= nil then return hwnd end
+
+        hwnd = u.FindWindowExA(nil, nil, "Chrome_WidgetWin_1", nil)
+        while hwnd ~= nil do
+            if u.IsWindowVisible(hwnd) then
+                local len = u.GetWindowTextA(hwnd, buf, 512)
+                if len > 0 then
+                    local title = ffi.string(buf)
+                    if not isBlacklisted(title) then
+                        return hwnd
+                    end
+                end
+            end
+            hwnd = u.FindWindowExA(nil, hwnd, "Chrome_WidgetWin_1", nil)
+        end
+        return nil
+    end)
+    if ok then return result end
+    return nil
+end
+
+local function isHwndValid(hwnd)
+    if not hwnd then return false end
+    local ok, result = pcall(function()
+        return ffi.load("user32").IsWindow(hwnd)
+    end)
+    return ok and result
+end
+
+local function GetTitle(hwnd)
+    if not hwnd then return nil end
+    local ok, result = pcall(function()
+        local buf = ffi.new("char[512]")
+        local len = ffi.load("user32").GetWindowTextA(hwnd, buf, 512)
+        if len <= 0 then return nil end
+        return ffi.string(buf)
+    end)
+    if ok then return result end
+    return nil
+end
+
+local function SendCommand(cmd)
+    if not isHwndValid(spotifyHwnd) then
+        spotifyHwnd = FindSpotifyHwnd()
+    end
+    if not spotifyHwnd then return end
+    pcall(function()
+        ffi.load("user32").SendMessageA(spotifyHwnd, WM_APPCOMMAND, 0, cmd)
+    end)
+end
+
+local function ParseTitle(title)
+    if not title then return nil, nil end
+    local sep = title:find(" %- ")
+    if sep then
+        local artist = title:sub(1, sep - 1):match("^%s*(.-)%s*$")
+        local song   = title:sub(sep + 3):match("^%s*(.-)%s*$")
+        return artist, song
+    end
+    return nil, nil
+end
+
+callbacks.Register("Draw", "spotify", function()
+    if not enable:GetValue() then return end
+
+    local now = common.Time()
+
+    local function checkKey(keyRef, stateKey, cmd)
+        local k = keyRef:GetValue()
+        if k == 0 then return end
+        local pressed = input.IsButtonDown(k)
+        if pressed and not lastKeys[stateKey] then
+            SendCommand(cmd)
+            lastCheck = 0
+        end
+        lastKeys[stateKey] = pressed
+    end
+
+    checkKey(keyPrev,  "prev",  APPCOMMAND_MEDIA_PREVTRACK)
+    checkKey(keyNext,  "next",  APPCOMMAND_MEDIA_NEXTTRACK)
+    checkKey(keyPause, "pause", APPCOMMAND_MEDIA_PLAY_PAUSE)
+
+    if now - lastCheck > 2 then
+        lastCheck = now
+
+        if not isHwndValid(spotifyHwnd) then
+            spotifyHwnd = FindSpotifyHwnd()
+        end
+
+        if spotifyHwnd then
+            local title = GetTitle(spotifyHwnd)
+            if title and title ~= "" then
+                local artist, song = ParseTitle(title)
+                if artist and song then
+                    -- Çalıyor
+                    songText = string.format("%s - %s", artist, song)
+                else
+                    -- Durdurulmuş (title var ama " - " yok)
+                    songText = "|| Durduruldu"
+                end
+            else
+                songText = "|| Durduruldu"
+            end
+        else
+            songText = "Spotify acik degil"
+        end
+    end
+
+    local sw, _ = draw.GetScreenSize()
+    draw.SetFont(font)
+    local tw, th = draw.GetTextSize(songText)
+
+    draw.Color(0, 0, 0, 160)
+    draw.FilledRect(sw/2 - tw/2 - 6, 4, sw/2 + tw/2 + 6, 4 + th + 6)
+
+    draw.Color(30, 215, 96, 255)
+    draw.FilledRect(sw/2 - tw/2 - 4, 10, sw/2 - tw/2 + 4, 18)
+
+    draw.Color(0, 0, 0, 255)
+    draw.Text(sw/2 - tw/2 + 7, 7, songText)
+    draw.Color(255, 255, 255, 255)
+    draw.Text(sw/2 - tw/2 + 6, 6, songText)
+end)
