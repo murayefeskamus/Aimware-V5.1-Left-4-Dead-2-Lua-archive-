@@ -1,0 +1,57 @@
+local font = draw.CreateFont("Tahoma", 18, 700)
+
+-- BIT MASKS SHI
+local UPGRADE_LASER      = 4
+local UPGRADE_INCENDIARY = 1
+local UPGRADE_EXPLOSIVE  = 2
+
+callbacks.Register("Draw", function()
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players then return end
+
+    draw.SetFont(font)
+
+    local y = 200
+    draw.Color(255,255,0,255)
+    draw.Text(20, y, "Survivor Weapon Upgrades")
+    y = y + 25
+
+    for _, player in pairs(players) do
+        if not player:IsAlive() then goto continue end
+        if player:IsDormant() then goto continue end
+        if player:GetTeamNumber() ~= 2 then goto continue end 
+
+        local name = player:GetName() or "Unknown"
+
+        local weapon = player:GetPropEntity("m_hActiveWeapon")
+        if not weapon then goto continue end
+
+        local upgrades = weapon:GetPropInt("m_upgradeBitVec") or 0
+        local text = ""
+
+        if bit.band(upgrades, UPGRADE_LASER) ~= 0 then
+            draw.Color(0,255,255,255) -- cyan
+            text = text .. "LASER "
+        end
+        if bit.band(upgrades, UPGRADE_INCENDIARY) ~= 0 then
+            draw.Color(255,100,0,255) -- orange
+            text = text .. "FIRE "
+        end
+        if bit.band(upgrades, UPGRADE_EXPLOSIVE) ~= 0 then
+            draw.Color(255,0,0,255) -- red
+            text = text .. "EXPLO "
+        end
+
+        if text == "" then
+            draw.Color(255,255,255,255)
+            text = "NONE"
+        end
+
+        draw.Text(20, y, name .. " | " .. text)
+        y = y + 20
+
+        ::continue::
+    end
+
+end)
