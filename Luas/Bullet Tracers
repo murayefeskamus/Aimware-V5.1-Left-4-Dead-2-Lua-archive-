@@ -1,0 +1,109 @@
+--Simple Tracer
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Bullet Tracer", 320, 30, 300, 0)
+
+local enable     = gui.Checkbox(gb, "tracer.enable",    "Enable Tracer",      true)
+local show_self  = gui.Checkbox(gb, "tracer.self",      "Show Own Tracers",   true)
+local show_team  = gui.Checkbox(gb, "tracer.team",      "Show Team Tracers",  true)
+local show_enemy = gui.Checkbox(gb, "tracer.enemy",     "Show Enemy Tracers", true)
+local duration   = gui.Slider(gb,   "tracer.duration",  "Duration (x0.1s)",   5, 1, 30)
+local thickness  = gui.Slider(gb,   "tracer.thickness", "Thickness",          1, 1, 5)
+local self_col   = gui.ColorPicker(gb, "tracer.selfcol",  "Own Color",    255, 255,   0, 255)
+local team_col   = gui.ColorPicker(gb, "tracer.teamcol",  "Team Color",   100, 255, 100, 255)
+local enemy_col  = gui.ColorPicker(gb, "tracer.enemycol", "Enemy Color",  255, 100, 100, 255)
+
+local tracers = {}
+
+client.AllowListener("bullet_impact")
+
+callbacks.Register("FireGameEvent", "tracer_event", function(event)
+    if not enable:GetValue() then return end
+    if event:GetName() ~= "bullet_impact" then return end
+
+    local userid = event:GetInt("userid")
+    local ix     = event:GetFloat("x")
+    local iy     = event:GetFloat("y")
+    local iz     = event:GetFloat("z")
+
+    local idx    = client.GetPlayerIndexByUserID(userid)
+    local player = entities.GetByIndex(idx)
+    if not player then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+
+    local origin = player:GetAbsOrigin()
+    if not origin then return end
+
+    local is_self = (player:GetIndex() == me:GetIndex())
+    local is_team = (player:GetTeamNumber() == me:GetTeamNumber())
+
+    if is_self             and not show_self:GetValue()  then return end
+    if not is_self and is_team  and not show_team:GetValue()  then return end
+    if not is_team         and not show_enemy:GetValue() then return end
+
+    local dur = duration:GetValue() * 0.1
+
+    table.insert(tracers, {
+        start   = origin + Vector3(0, 0, 64),
+        impact  = Vector3(ix, iy, iz),
+        until_  = globals.RealTime() + dur,
+        dur     = dur,
+        is_self = is_self,
+        is_team = is_team,
+    })
+end)
+
+callbacks.Register("Draw", "tracer_draw", function()
+    if not enable:GetValue() then return end
+
+    local now = globals.RealTime()
+    local i   = 1
+
+    while i <= #tracers do
+        local t = tracers[i]
+
+        if now > t.until_ then
+            table.remove(tracers, i)
+        else
+            local sx1, sy1 = client.WorldToScreen(t.start)
+            local sx2, sy2 = client.WorldToScreen(t.impact)
+
+            if sx1 and sy1 and sx2 and sy2 then
+                local alpha = math.floor(((t.until_ - now) / t.dur) * 255)
+                alpha = math.max(0, math.min(255, alpha))
+
+                local r, g, b
+                if t.is_self then
+                    r, g, b, _ = self_col:GetValue()
+                elseif t.is_team then
+                    r, g, b, _ = team_col:GetValue()
+                else
+                    r, g, b, _ = enemy_col:GetValue()
+                end
+
+                local thick = thickness:GetValue()
+
+                draw.Color(0, 0, 0, math.floor(alpha * 0.4))
+                for o = 0, thick - 1 do
+                    draw.Line(sx1+o+1, sy1+1, sx2+o+1, sy2+1)
+                    draw.Line(sx1+1, sy1+o+1, sx2+1, sy2+o+1)
+                end
+
+                draw.Color(r, g, b, alpha)
+                for o = 0, thick - 1 do
+                    draw.Line(sx1+o, sy1, sx2+o, sy2)
+                    draw.Line(sx1, sy1+o, sx2, sy2+o)
+                end
+
+                draw.Color(r, g, b, alpha)
+                draw.FilledCircle(sx2, sy2, 3)
+                draw.Color(255, 255, 255, math.floor(alpha * 0.8))
+                draw.OutlinedCircle(sx2, sy2, 3)
+            end
+
+            i = i + 1
+        end
+    end
+end)
