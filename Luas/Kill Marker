@@ -1,0 +1,119 @@
+-- Killmarker l4d2
+
+local ref = gui.Reference("Visuals", "Other")
+local box = gui.Groupbox(ref, "Hitmarker", 325, 315, 300, 0)
+
+local enable    = gui.Checkbox(box, "hm.enable",    "Enable Hitmarker",  false)
+local style     = gui.Combobox(box, "hm.style",     "Style",             "X", "Plus", "Dot", "Circle")
+local duration  = gui.Slider(box,   "hm.duration",  "Duration (x0.1s)", 5, 1, 30)
+local size      = gui.Slider(box,   "hm.size",      "Size",             10, 4, 40)
+local thickness = gui.Slider(box,   "hm.thick",     "Thickness",        2, 1, 5)
+local only_me   = gui.Checkbox(box, "hm.onlyme",    "Sadece Benim Killlerim", true)
+
+local kill_color = gui.ColorPicker(box, "hm.killcolor", "Kill Color", 255, 50, 50, 255)
+
+local hits      = {}
+local my_userID = nil
+
+client.AllowListener("player_death")
+
+local function GetMyUserID()
+    local me = entities.GetLocalPlayer()
+    if not me then return nil end
+    local info = client.GetPlayerInfo(me:GetIndex())
+    if not info then return nil end
+    return info.userID
+end
+
+callbacks.Register("FireGameEvent", "hm_event", function(event)
+    if not enable:GetValue() then return end
+    if event:GetName() ~= "player_death" then return end
+
+    local attackerID = event:GetInt("attacker")
+    local victimID   = event:GetInt("userid")
+    if attackerID == 0 or attackerID == victimID then return end
+
+    if only_me:GetValue() then
+        if not my_userID then my_userID = GetMyUserID() end
+        if not my_userID then return end
+        if attackerID ~= my_userID then return end
+    end
+
+    table.insert(hits, {
+        time = globals.RealTime(),
+        dur  = duration:GetValue() * 0.1,
+    })
+
+    if #hits > 20 then table.remove(hits, 1) end
+end)
+
+local function DrawX(cx, cy, s, thick)
+    for o = 0, thick - 1 do
+        draw.Line(cx - s + o, cy - s, cx + s + o, cy + s)
+        draw.Line(cx + s + o, cy - s, cx - s + o, cy + s)
+    end
+end
+
+local function DrawPlus(cx, cy, s, thick)
+    for o = 0, thick - 1 do
+        draw.Line(cx - s, cy + o, cx + s, cy + o)
+        draw.Line(cx + o, cy - s, cx + o, cy + s)
+    end
+end
+
+local function DrawDot(cx, cy, s)
+    draw.FilledCircle(cx, cy, math.max(2, s / 3))
+end
+
+local function DrawCircleHM(cx, cy, s, thick)
+    draw.OutlinedCircle(cx, cy, s)
+    if thick >= 2 then draw.OutlinedCircle(cx, cy, s + 1) end
+    if thick >= 3 then draw.OutlinedCircle(cx, cy, s - 1) end
+end
+
+callbacks.Register("Draw", "hm_draw", function()
+    if not enable:GetValue() then return end
+
+    local now    = globals.RealTime()
+    local sw, sh = draw.GetScreenSize()
+    local cx, cy = sw / 2, sh / 2
+    local s      = size:GetValue()
+    local thick  = thickness:GetValue()
+    local sel    = style:GetValue()
+    local r, g, b, _ = kill_color:GetValue()
+
+    local i = 1
+    while i <= #hits do
+        local h = hits[i]
+        local expire = h.time + h.dur
+
+        if now > expire then
+            table.remove(hits, i)
+        else
+            local ratio = (expire - now) / h.dur
+            local alpha = math.max(0, math.min(255, math.floor(ratio * 255)))
+
+            draw.Color(0, 0, 0, math.floor(alpha * 0.5))
+            if sel == 0 then      DrawX(cx+1,        cy+1, s, thick)
+            elseif sel == 1 then  DrawPlus(cx+1,     cy+1, s, thick)
+            elseif sel == 2 then  DrawDot(cx+1,      cy+1, s)
+            elseif sel == 3 then  DrawCircleHM(cx+1, cy+1, s, thick)
+            end
+
+            draw.Color(r, g, b, alpha)
+            if sel == 0 then      DrawX(cx,        cy, s, thick)
+            elseif sel == 1 then  DrawPlus(cx,     cy, s, thick)
+            elseif sel == 2 then  DrawDot(cx,      cy, s)
+            elseif sel == 3 then  DrawCircleHM(cx, cy, s, thick)
+            end
+
+            i = i + 1
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("FireGameEvent", "hm_event")
+    callbacks.Unregister("Draw", "hm_draw")
+    my_userID = nil
+end)
