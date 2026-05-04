@@ -1,0 +1,30 @@
+Not minee another forum lua 
+
+
+
+local lastActivationTime = 0
+local doubleshot = false
+
+local enabledDT = gui.Checkbox(gui.Reference("Misc", "General", "Extra"), "autofire", "Double-Tap", 0)
+enabledDT:SetDescription("Does a \"Double Tap\" While your speedhack key is held.")
+
+local function onCreateMove(cmd)
+	if not gui.GetValue("misc.master") then return end
+	if not enabledDT:GetValue() then return end
+    local currentTime = globals.RealTime()
+    if input.IsButtonDown(gui.GetValue("misc.speedhack.key")) then
+        if not doubleshot then
+            cmd.buttons = bit.bor(cmd.buttons, 1)
+            lastActivationTime = currentTime
+            doubleshot = true
+        elseif doubleshot and currentTime - lastActivationTime < 0.32 then
+            cmd.buttons = bit.bor(cmd.buttons, 1)
+		elseif currentTime - lastActivationTime > 0.32 and currentTime - lastActivationTime < 1 then
+			cmd.buttons = bit.band(cmd.buttons, bit.bnot(1))
+		elseif currentTime - lastActivationTime > 1 then
+			doubleshot=false
+        end
+    end
+end
+
+callbacks.Register("CreateMove", "Speedhack", onCreateMove)
