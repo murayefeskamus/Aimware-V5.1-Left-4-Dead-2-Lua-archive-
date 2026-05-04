@@ -1,0 +1,27 @@
+dude locked 180 degeree so its not like cs
+
+
+--Better Spin
+local ref = gui.Reference("Misc")
+local tab = gui.Tab(ref, "aa_tab", "Anti-Aim")
+local aa_box = gui.Groupbox(tab, "Spinbot", 16, 16, 300, 80)
+
+local aa_enabled = gui.Checkbox(aa_box, "aa.enable", "Enable Anti-Aim", false)
+local spin_speed = gui.Slider(aa_box, "aa.spinspeed", "Spin Hızı", 180, 1, 180)
+
+local current_yaw = 0
+
+callbacks.Register("CreateMove", "anti_aim_action", function(cmd)
+    local me = entities.GetLocalPlayer()
+    if not aa_enabled:GetValue() or not me or not me:IsAlive() then
+        return
+    end
+    current_yaw = (current_yaw + spin_speed:GetValue()) % 360
+    
+    local final_yaw = current_yaw
+    if final_yaw > 180 then final_yaw = final_yaw - 360 end
+
+    local anti_aim_angles = EulerAngles(0, final_yaw, 0)
+
+    cmd:SetViewAngles(anti_aim_angles)
+end)
