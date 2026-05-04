@@ -1,3 +1,5 @@
+credits to aika 
+
 
 local ref = gui.Reference("Visuals", "Other")
 local box = gui.Groupbox(ref, "Spotify", 325, 315, 300, 0)
