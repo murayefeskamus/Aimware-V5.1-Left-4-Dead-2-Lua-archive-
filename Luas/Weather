@@ -1,0 +1,135 @@
+-- Effects
+local tab = gui.Tab(gui.Reference("Visuals"), "particle.tab", "Particles")
+local box = gui.Groupbox(tab, "Effects", 16, 16, 300, 400)
+
+local enable = gui.Checkbox(box, "particle.enable", "Enable Effects", 1)
+
+local snow = gui.Checkbox(box, "particle.snow", "Winter Effect (Snow)", 1)
+local rain = gui.Checkbox(box, "particle.rain", "Rain Effect", 0)
+local ambient = gui.Checkbox(box, "particle.ambient", "Particle Effect", 0)
+
+
+local fog = gui.Checkbox(box, "particle.fog", "Fog Layer", 1)
+
+local count = gui.Slider(box, "particle.count", "Particle Count", 200, 50, 400)
+
+local particles = {}
+local last_count = 0
+
+local function create_particle(screenW, screenH)
+    return {
+        x = math.random(-screenW, screenW),
+        y = math.random(-screenH, screenH),
+        z = math.random(10, 120),
+        speed = math.random(40, 120),
+        drift = math.random(-20, 20)
+    }
+end
+
+local function rebuild_particles(n, screenW, screenH)
+    particles = {}
+    for i = 1, n do
+        particles[i] = create_particle(screenW, screenH)
+    end
+end
+
+local function hsv_to_rgb(h, s, v)
+    local i = math.floor(h * 6)
+    local f = h * 6 - i
+    local p = v * (1 - s)
+    local q = v * (1 - f * s)
+    local t = v * (1 - (1 - f) * s)
+    i = i % 6
+
+    if i == 0 then return v, t, p end
+    if i == 1 then return q, v, p end
+    if i == 2 then return p, v, t end
+    if i == 3 then return p, q, v end
+    if i == 4 then return t, p, v end
+    if i == 5 then return v, p, q end
+end
+
+callbacks.Register("Draw", function()
+    if not enable:GetValue() then return end
+
+    local screenW, screenH = draw.GetScreenSize()
+    local cx, cy = screenW / 2, screenH / 2
+
+    local max_particles = count:GetValue()
+
+    if max_particles ~= last_count then
+        rebuild_particles(max_particles, screenW, screenH)
+        last_count = max_particles
+    end
+
+    if #particles == 0 then
+        rebuild_particles(max_particles, screenW, screenH)
+    end
+
+    local ft = globals.FrameTime()
+    local time = globals.RealTime()
+
+    local ang = engine.GetViewAngles()
+    local right = ang:Right()
+    local forward = ang:Forward()
+
+    local wind = math.sin(time * 0.5) * 25
+
+    if fog:GetValue() then
+        draw.Color(200, 200, 200, 20)
+        draw.FilledRect(0, 0, screenW, screenH)
+
+        draw.Color(180, 180, 180, 10)
+        draw.FilledRect(0, 0, screenW, screenH)
+    end
+
+
+    for i = 1, #particles do
+        local p = particles[i]
+
+        local depth = p.z / 120
+        local inv = 1 / depth
+
+        p.y = p.y + p.speed * ft * inv
+        p.x = p.x + (p.drift + wind) * ft
+
+        p.x = p.x - right.x * 40 * ft * inv
+        p.y = p.y - forward.y * 40 * ft * inv
+
+        local sx = cx + p.x * inv
+        local sy = cy + p.y * inv
+
+        if sy > screenH or sx < 0 or sx > screenW then
+            particles[i] = create_particle(screenW, screenH)
+            goto continue
+        end
+
+        local alpha = 255 * (1 - depth)
+
+        if snow:GetValue() then
+            local size = math.max(0.2, (0.8 * inv) + math.random() * 0.2)
+
+            draw.Color(255, 255, 255, alpha)
+            draw.FilledCircle(sx, sy, size)
+        end
+
+        if rain:GetValue() then
+            local length = 8 * inv
+
+            draw.Color(180, 180, 255, alpha)
+            draw.Line(sx, sy, sx, sy + length)
+
+            draw.Color(180, 180, 255, alpha * 0.4)
+            draw.Line(sx, sy - length, sx, sy)
+        end
+
+        if ambient:GetValue() then
+            local size = math.max(0.4, 1.5 * inv)
+
+            draw.Color(255, 200, 150, alpha * 0.5)
+            draw.FilledCircle(sx, sy, size)
+        end
+
+        ::continue::
+    end
+end)
