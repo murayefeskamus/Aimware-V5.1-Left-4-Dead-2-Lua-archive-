@@ -1,0 +1,158 @@
+--door mmuck 
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Door ESP", 320, 400, 300, 0)
+
+local enable      = gui.Checkbox(gb, "door.enable",   "Enable Door ESP",       true)
+local show_box    = gui.Checkbox(gb, "door.box",      "Bounding Box",          true)
+local show_label  = gui.Checkbox(gb, "door.label",    "Label",                 true)
+local show_dist   = gui.Checkbox(gb, "door.dist",     "Distance",              true)
+local show_open   = gui.Checkbox(gb, "door.open",     "Open/Closed State",     true)
+local max_dist    = gui.Slider(gb,   "door.maxdist",  "Max Distance",          1500, 100, 5000)
+local col_base    = gui.ColorPicker(gb, "door.bcol",  "CBaseDoor",      200, 180, 100, 255)
+local col_prop    = gui.ColorPicker(gb, "door.pcol",  "CBasePropDoor",  100, 200, 255, 255)
+local col_check   = gui.ColorPicker(gb, "door.ccol",  "Checkpoint Door",255, 120,  50, 255)
+
+local font = draw.CreateFont("Tahoma", 12, 700)
+
+local DOOR_CLASSES = {
+    ["CBaseDoor"]                    = "col_base",
+    ["CBasePropDoor"]                = "col_prop",
+    ["CPropDoorRotatingCheckpoint"]  = "col_check",
+}
+
+local function DrawOutlinedText(x, y, text, r, g, b)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+local function DrawBBox(corners, r, g, b, a)
+    local sc = {}
+    for i, v in ipairs(corners) do
+        local sx, sy = client.WorldToScreen(v)
+        sc[i] = sx and {sx, sy} or nil
+    end
+
+    local function L(i1, i2)
+        if sc[i1] and sc[i2] then
+            draw.Color(0, 0, 0, math.floor(a * 0.4))
+            draw.Line(sc[i1][1]+1, sc[i1][2]+1, sc[i2][1]+1, sc[i2][2]+1)
+            draw.Color(r, g, b, a)
+            draw.Line(sc[i1][1], sc[i1][2], sc[i2][1], sc[i2][2])
+        end
+    end
+
+    L(1,2) L(2,3) L(3,4) L(4,1)
+    L(5,6) L(6,7) L(7,8) L(8,5)
+    L(1,5) L(2,6) L(3,7) L(4,8)
+end
+
+local function GetDoorState(ent)
+    local ok, state = pcall(function()
+        return ent:GetPropInt("m_toggle_state")
+    end)
+    if not ok or not state then return nil end
+    local states = {[0]="KAPALI", [1]="ACIK", [2]="ACILIYOR", [3]="KAPANIYOR"}
+    return states[state] or ("STATE:" .. state), state
+end
+
+callbacks.Register("Draw", "door_esp", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local mypos = lp:GetAbsOrigin()
+
+    for cls, colorKey in pairs(DOOR_CLASSES) do
+        local ents = entities.FindByClass(cls) or {}
+
+        for _, ent in pairs(ents) do
+            if ent:IsDormant() then goto continue end
+
+            local origin = ent:GetAbsOrigin()
+            local mins   = ent:GetMins()
+            local maxs   = ent:GetMaxs()
+            if not mins or not maxs then goto continue end
+
+            local center
+            if origin then
+                center = origin
+            else
+                center = Vector3(
+                    (mins.x + maxs.x) / 2,
+                    (mins.y + maxs.y) / 2,
+                    (mins.z + maxs.z) / 2
+                )
+            end
+
+            local dist = (center - mypos):Length()
+            if dist > max_dist:GetValue() then goto continue end
+
+            local r, g, b, a
+            if colorKey == "col_base" then
+                r, g, b, a = col_base:GetValue()
+            elseif colorKey == "col_prop" then
+                r, g, b, a = col_prop:GetValue()
+            else
+                r, g, b, a = col_check:GetValue()
+            end
+
+            local stateText, stateID = GetDoorState(ent)
+            if stateID == 1 then
+                a = math.floor(a * 0.4)
+            end
+
+            if show_box:GetValue() then
+                local ref2 = origin or Vector3(0,0,0)
+                local corners = {
+                    Vector3(ref2.x + mins.x, ref2.y + mins.y, ref2.z + mins.z),
+                    Vector3(ref2.x + mins.x, ref2.y + maxs.y, ref2.z + mins.z),
+                    Vector3(ref2.x + maxs.x, ref2.y + maxs.y, ref2.z + mins.z),
+                    Vector3(ref2.x + maxs.x, ref2.y + mins.y, ref2.z + mins.z),
+                    Vector3(ref2.x + mins.x, ref2.y + mins.y, ref2.z + maxs.z),
+                    Vector3(ref2.x + mins.x, ref2.y + maxs.y, ref2.z + maxs.z),
+                    Vector3(ref2.x + maxs.x, ref2.y + maxs.y, ref2.z + maxs.z),
+                    Vector3(ref2.x + maxs.x, ref2.y + mins.y, ref2.z + maxs.z),
+                }
+                DrawBBox(corners, r, g, b, a)
+            end
+
+            local sx, sy = client.WorldToScreen(center)
+            if not sx or not sy then goto continue end
+
+            local offset = 0
+
+            if show_label:GetValue() then
+                local short = cls == "CBaseDoor" and "KAPI"
+                           or cls == "CBasePropDoor" and "PROP KAPI"
+                           or "CHECKPOINT"
+                local tw, _ = draw.GetTextSize(short)
+                DrawOutlinedText(sx - tw/2, sy - offset, short, r, g, b)
+                offset = offset + 14
+            end
+
+            if show_open:GetValue() and stateText then
+                local sr = stateID == 1 and 100 or (stateID == 0 and 255 or 255)
+                local sg = stateID == 1 and 255 or (stateID == 0 and 80  or 200)
+                local sb = stateID == 2 and 50  or 50
+                local tw, _ = draw.GetTextSize(stateText)
+                DrawOutlinedText(sx - tw/2, sy - offset, stateText, sr, sg, sb)
+                offset = offset + 14
+            end
+
+            if show_dist:GetValue() then
+                local dtxt = string.format("%.0fm", dist * 0.01905)
+                local tw, _ = draw.GetTextSize(dtxt)
+                DrawOutlinedText(sx - tw/2, sy - offset, dtxt, 180, 180, 180)
+            end
+
+            ::continue::
+        end
+    end
+end)
