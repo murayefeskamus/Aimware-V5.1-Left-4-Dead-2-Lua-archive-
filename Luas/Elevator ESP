@@ -1,0 +1,218 @@
+--elevator
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Elevator ESP", 320, 400, 300, 0)
+
+local enable      = gui.Checkbox(gb, "elev.enable",   "Enable Elevator ESP",  true)
+local show_box    = gui.Checkbox(gb, "elev.box",      "Bounding Box",         true)
+local show_info   = gui.Checkbox(gb, "elev.info",     "Info (Speed/ETA)",     true)
+local show_bar    = gui.Checkbox(gb, "elev.bar",      "Progress Bar",         true)
+local show_line   = gui.Checkbox(gb, "elev.line",     "Line to Elevator",     true)
+local move_col    = gui.ColorPicker(gb, "elev.mcol",  "Moving Color",  255, 220, 0,   255)
+local idle_col    = gui.ColorPicker(gb, "elev.icol",  "Idle Color",    100, 180, 255, 255)
+
+local font    = draw.CreateFont("Tahoma", 12, 700)
+local font_big = draw.CreateFont("Tahoma", 15, 700)
+
+local function DrawLine(p1, p2, r, g, b, a)
+    local sx1, sy1 = client.WorldToScreen(p1)
+    local sx2, sy2 = client.WorldToScreen(p2)
+    if not sx1 or not sx2 then return end
+    draw.Color(0, 0, 0, math.floor(a * 0.5))
+    draw.Line(sx1+1, sy1+1, sx2+1, sy2+1)
+    draw.Color(r, g, b, a)
+    draw.Line(sx1, sy1, sx2, sy2)
+end
+
+local function DrawBoundingBox(ent, r, g, b, a)
+    local mins   = ent:GetMins()
+    local maxs   = ent:GetMaxs()
+    local origin = ent:GetAbsOrigin()
+    if not mins or not maxs or not origin then return end
+
+    local corners = {
+        Vector3(origin.x + mins.x, origin.y + mins.y, origin.z + mins.z),
+        Vector3(origin.x + mins.x, origin.y + maxs.y, origin.z + mins.z),
+        Vector3(origin.x + maxs.x, origin.y + maxs.y, origin.z + mins.z),
+        Vector3(origin.x + maxs.x, origin.y + mins.y, origin.z + mins.z),
+        Vector3(origin.x + mins.x, origin.y + mins.y, origin.z + maxs.z),
+        Vector3(origin.x + mins.x, origin.y + maxs.y, origin.z + maxs.z),
+        Vector3(origin.x + maxs.x, origin.y + maxs.y, origin.z + maxs.z),
+        Vector3(origin.x + maxs.x, origin.y + mins.y, origin.z + maxs.z),
+    }
+
+    local sc = {}
+    for i, v in ipairs(corners) do
+        local sx, sy = client.WorldToScreen(v)
+        sc[i] = sx and {sx, sy} or nil
+    end
+
+    local function L(i1, i2)
+        if sc[i1] and sc[i2] then
+            draw.Color(0, 0, 0, math.floor(a * 0.4))
+            draw.Line(sc[i1][1]+1, sc[i1][2]+1, sc[i2][1]+1, sc[i2][2]+1)
+            draw.Color(r, g, b, a)
+            draw.Line(sc[i1][1], sc[i1][2], sc[i2][1], sc[i2][2])
+        end
+    end
+
+    L(1,2) L(2,3) L(3,4) L(4,1)
+    L(5,6) L(6,7) L(7,8) L(8,5)
+    L(1,5) L(2,6) L(3,7) L(4,8)
+end
+
+local function DrawOutlinedText(x, y, text, r, g, b, fnt)
+    draw.SetFont(fnt or font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+callbacks.Register("Draw", "elevator_esp", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local mypos = lp:GetAbsOrigin()
+
+    local elevators = entities.FindByClass("CFuncElevator") or {}
+    if #elevators == 0 then return end
+
+    for _, ent in pairs(elevators) do
+        if ent:IsDormant() then goto continue end
+
+        local ok1, orig    = pcall(function() return ent:GetPropVector("m_vecOrigin") end)
+        local ok2, isMove  = pcall(function() return ent:GetPropInt("m_isMoving") end)
+        local ok3, curSpd  = pcall(function() return ent:GetPropFloat("m_currentSpeed") end)
+        local ok4, maxSpd  = pcall(function() return ent:GetPropFloat("m_maxSpeed") end)
+        local ok5, accel   = pcall(function() return ent:GetPropFloat("m_acceleration") end)
+        local ok6, destZ   = pcall(function() return ent:GetPropFloat("m_destinationFloorPosition") end)
+        local ok7, startZ  = pcall(function() return ent:GetPropFloat("m_movementStartZ") end)
+        local ok8, startT  = pcall(function() return ent:GetPropFloat("m_movementStartTime") end)
+        local ok9, startSp = pcall(function() return ent:GetPropFloat("m_movementStartSpeed") end)
+
+        if not ok1 or not orig then goto continue end
+
+        local moving   = ok2 and isMove == 1
+        local curSpeed = ok3 and curSpd or 0
+        local maxSpeed = ok4 and maxSpd or 0
+        local dest     = ok6 and destZ or orig.z
+        local sZ       = ok7 and startZ or orig.z
+
+        local r, g, b, a
+        if moving then
+            r, g, b, a = move_col:GetValue()
+        else
+            r, g, b, a = idle_col:GetValue()
+        end
+
+        local sx, sy = client.WorldToScreen(orig)
+
+        if show_box:GetValue() then
+            DrawBoundingBox(ent, r, g, b, math.floor(a * 0.7))
+        end
+
+        if show_line:GetValue() and sx and sy then
+            local msx, msy = client.WorldToScreen(mypos)
+            if msx and msy then
+                draw.Color(0, 0, 0, 80)
+                draw.Line(msx+1, msy+1, sx+1, sy+1)
+                draw.Color(r, g, b, math.floor(a * 0.5))
+                draw.Line(msx, msy, sx, sy)
+            end
+        end
+
+        if not sx or not sy then goto continue end
+
+        if show_bar:GetValue() and moving then
+            local totalDist = math.abs(dest - sZ)
+            local doneDist  = math.abs(orig.z - sZ)
+            local ratio     = (totalDist > 0) and math.min(doneDist / totalDist, 1.0) or 0
+
+            local barW = 70
+            local barH = 6
+            local bx   = sx - barW / 2
+            local by   = sy + 10
+
+            draw.Color(0, 0, 0, 160)
+            draw.FilledRect(bx, by, bx + barW, by + barH)
+
+            draw.Color(r, g, b, 200)
+            draw.FilledRect(bx, by, bx + math.floor(barW * ratio), by + barH)
+
+            draw.Color(0, 0, 0, 180)
+            draw.OutlinedRect(bx, by, bx + barW, by + barH)
+
+            local dir = dest > sZ and "▲" or "▼"
+            local tw, _ = draw.GetTextSize(dir)
+            DrawOutlinedText(sx - tw/2, by + barH + 2, dir, r, g, b)
+        end
+
+        if show_info:GetValue() then
+            local lines = {}
+
+            if moving then
+                table.insert(lines, {"HAREKET EDİYOR", r, g, b, font_big})
+            else
+                table.insert(lines, {"BEKLIYOR", r, g, b, font_big})
+            end
+
+            if curSpeed > 0 then
+                table.insert(lines, {
+                    string.format("Hız: %.0f / %.0f", curSpeed, maxSpeed),
+                    255, 255, 255
+                })
+            end
+
+            if ok5 and accel and accel > 0 then
+                table.insert(lines, {
+                    string.format("İvme: %.0f", accel),
+                    200, 200, 200
+                })
+            end
+
+            if moving and curSpeed > 0 then
+                local remainDist = math.abs(dest - orig.z)
+                local eta = remainDist / curSpeed
+                table.insert(lines, {
+                    string.format("ETA: %.1fs", eta),
+                    255, 220, 50
+                })
+            end
+
+            if moving then
+                local goingUp = dest > orig.z
+                table.insert(lines, {
+                    goingUp and "↑ YUKARI" or "↓ ASAGI",
+                    goingUp and 100 or 255,
+                    goingUp and 255 or 100,
+                    50
+                })
+            end
+
+            local dist = (orig - mypos):Length()
+            table.insert(lines, {
+                string.format("Mesafe: %.0fm", dist * 0.01905),
+                180, 180, 180
+            })
+
+            local offset = -15
+            for _, row in ipairs(lines) do
+                local txt  = row[1]
+                local tr   = row[2] or 255
+                local tg   = row[3] or 255
+                local tb   = row[4] or 255
+                local fnt  = row[5] or font
+                local tw, _ = draw.GetTextSize(txt)
+                DrawOutlinedText(sx - tw/2, sy + offset, txt, tr, tg, tb, fnt)
+                offset = offset - 16
+            end
+        end
+
+        ::continue::
+    end
+end)
