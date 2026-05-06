@@ -1,0 +1,140 @@
+u also got fucking event for it if it works idk didnt check b4 but its:
+
+"player_talking_state"
+
+
+
+-- Voice Revealer 
+
+local ref = gui.Reference("Misc", "General", "Extra")
+local voice_enable  = gui.Checkbox(ref, "voicereveal.enable",   "Voice Revealer",       true)
+local show_stop     = gui.Checkbox(ref, "voicereveal.showstop", "Show Stop Talking",    false)
+
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if cm_sig == nil then
+    print("[VoiceReveal] cm_sig bulunamadi")
+    return
+end
+
+local function GetCHudChat()
+    local ok, res = pcall(function()
+        local g  = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+        if g == 0 then return nil end
+        local cm = ffi.cast("uintptr_t*", g)[0]
+        if cm == 0 then return nil end
+        local hc = ffi.cast("uintptr_t*", cm + 0x18)[0]
+        if hc == 0 then return nil end
+        return hc
+    end)
+    return (ok and res) or nil
+end
+
+local function ChatPrintf(idx, msg)
+    local hc = GetCHudChat()
+    if not hc then return end
+    pcall(function()
+        local vt = ffi.cast("uintptr_t**", hc)[0]
+        local fn = ffi.cast("void(__stdcall*)(void*, int, int, const char*)", vt[23])
+        fn(ffi.cast("void*", hc), idx, 0, msg)
+    end)
+end
+
+pcall(function()
+    ffi.cdef[[
+        int VirtualProtect(void* lpAddress, size_t dwSize,
+                           unsigned long flNewProtect,
+                           unsigned long* lpflOldProtect);
+    ]]
+end)
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local kernel32 = ffi.load("kernel32")
+
+local function PatchPtr(addr, newval)
+    local old = ffi.new("unsigned long[1]")
+    local ptr = ffi.cast("void*", addr)
+    kernel32.VirtualProtect(ptr, 4, PAGE_EXECUTE_READWRITE, old)
+    ffi.cast("uint32_t*", addr)[0] = ffi.cast("uint32_t", newval)
+    kernel32.VirtualProtect(ptr, 4, old[0], old)
+end
+
+local baseclient_ptr
+do
+    local ok, res = pcall(function()
+        local exp = mem.GetExport("client.dll", "CreateInterface")
+        if not exp or exp == 0 then return nil end
+        local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", exp)
+        local iface = ci("VClient016", nil)
+        if ffi.cast("uintptr_t", iface) == 0 then return nil end
+        return ffi.cast("uintptr_t", iface)
+    end)
+    if not ok or not res then
+        print("[VoiceReveal] IBaseClientDLL (VClient016) alinamadi")
+        return
+    end
+    baseclient_ptr = res
+end
+
+local VOICE_IDX = 32
+
+local vtable    = ffi.cast("uintptr_t**", baseclient_ptr)[0]
+local orig_addr = ffi.new("uintptr_t[1]")
+orig_addr[0]    = vtable[VOICE_IDX]
+
+local talking_state = {}  -- [entindex] = bool, spam onlemek icin
+
+local hook_cb = ffi.cast(
+    "void(__fastcall*)(void*, void*, int, int, int)",
+    function(ecx, edx, entindex, iSsSlot, bTalking)
+
+        pcall(function()
+            local orig = ffi.cast("void(__fastcall*)(void*, void*, int, int, int)", orig_addr[0])
+            orig(ecx, nil, entindex, iSsSlot, bTalking)
+        end)
+
+        if not voice_enable:GetValue() then return end
+
+        local was_talking = talking_state[entindex] or false
+        local is_talking  = (bTalking ~= 0)
+        if was_talking == is_talking then return end
+        talking_state[entindex] = is_talking
+
+        pcall(function()
+            if not is_talking and not show_stop:GetValue() then return end
+
+            local lp = entities.GetLocalPlayer()
+            if not lp then return end
+            local lpidx = lp:GetIndex()
+            if lpidx == entindex then return end  -- kendi sesini gosterme
+
+            local ent  = entities.GetByIndex(entindex)
+            local name = (ent and ent:GetName()) or ("Player#" .. entindex)
+            local team = ent and ent:GetTeamNumber() or 0
+
+            local color, label
+            if team == 2 then
+                color = "\x05"; label = "(survivor)"
+            elseif team == 3 then
+                color = "\x03"; label = "(infected)"
+            elseif team == 1 then
+                color = "\x04"; label = "(spectator)"
+            else
+                color = "\x01"; label = "(unknown)"
+            end
+
+            if is_talking then
+                ChatPrintf(lpidx,
+                    string.format("\x01[VOICE] %s%s \x01%s \x05konusuyor", color, label, name))
+            else
+                ChatPrintf(lpidx,
+                    string.format("\x01[VOICE] %s%s \x01%s \x01sustu", color, label, name))
+            end
+        end)
+    end
+)
+
+local entry_addr = ffi.cast("uintptr_t", vtable) + VOICE_IDX * 4
+PatchPtr(entry_addr, ffi.cast("uintptr_t", hook_cb))
+
+print(string.format("[VoiceReveal] loaded | IBaseClientDLL=0x%X | VoiceStatus@%d hooked",
+    tonumber(baseclient_ptr), VOICE_IDX))
