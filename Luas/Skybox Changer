@@ -1,0 +1,157 @@
+-- Skybox Changer 
+
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local skybox_enable = gui.Checkbox(ref, "sky.enable", "Skybox Changer", false)
+local skybox_list   = gui.Combobox(ref, "sky.name", "Skybox",
+    "sky_l4d_urban01_hdr",
+    "test_moon_hdr",
+    "sky_day01_09_hdr",
+    "urbannightburning_hdr",
+    "sky_l4d_rural02_hdr",
+    "river_hdr",
+    "docks_hdr"
+)
+
+local SKYBOXES = {
+    [0] = "sky_l4d_urban01_hdr",
+    [1] = "test_moon_hdr",
+    [2] = "sky_day01_09_hdr",
+    [3] = "urbannightburning_hdr",
+    [4] = "sky_l4d_rural02_hdr",
+    [5] = "river_hdr",
+    [6] = "docks_hdr",
+}
+
+local DEFAULT_SKY = "sky_l4d_urban01_hdr"
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+]]
+
+local FCVAR_CHEAT = 16384
+
+local engine_module = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("engine.dll"))
+local client_module = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll"))
+
+if engine_module == 0 then print("[Sky] engine.dll none") return end
+if client_module == 0 then print("[Sky] client.dll none") return end
+
+print(string.format("[Sky] engine.dll: 0x%X", tonumber(engine_module)))
+print(string.format("[Sky] client.dll: 0x%X", tonumber(client_module)))
+
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if icvar == nil then print("[Sky] ICvar bulunamadi") return end
+
+local find_var_fn = ffi.cast(
+    "void*(__thiscall*)(void*, const char*)",
+    ffi.cast("uintptr_t**", icvar)[0][13]
+)
+
+local function FindConVar(name)
+    local ok, result = pcall(function()
+        return find_var_fn(icvar, name)
+    end)
+    if not ok or result == nil then return nil end
+    if ffi.cast("uintptr_t", result) == 0 then return nil end
+    return result
+end
+
+local function RemoveCheatFlag(cv)
+    if cv == nil then return end
+    local fn = ffi.cast(
+        "void(__thiscall*)(void*, int)",
+        ffi.cast("uintptr_t**", cv)[0][4]
+    )
+    pcall(fn, cv, FCVAR_CHEAT)
+end
+
+local function SetConVarString(cv, value)
+    if cv == nil then return end
+    local fn = ffi.cast(
+        "void(__thiscall*)(void*, const char*)",
+        ffi.cast("uintptr_t**", cv)[0][12]
+    )
+    local buf = ffi.new("char[256]")
+    ffi.copy(buf, value)
+    pcall(fn, cv, buf)
+end
+
+local cv_sv_skyname = FindConVar("sv_skyname")
+if cv_sv_skyname then
+    RemoveCheatFlag(cv_sv_skyname)
+    print("[Sky] fucksky found")
+else
+    print("[Sky] none")
+end
+
+
+local r_loadskys_addr    = ffi.cast("void*", engine_module + 868112)
+local skyname_strval_ptr = client_module + 0x7806A8 + 0x24
+
+print(string.format("[Sky] R_LoadSkys: 0x%X",     tonumber(ffi.cast("uintptr_t", r_loadskys_addr))))
+print(string.format("[Sky] strval ptr: 0x%X",     tonumber(skyname_strval_ptr)))
+
+local r_loadskys_fn = ffi.cast("void(__cdecl*)()", r_loadskys_addr)
+local sky_buf       = ffi.new("char[256]")
+
+local function ApplySky(name)
+    -- cvar set shit
+    if cv_sv_skyname then
+        SetConVarString(cv_sv_skyname, name)
+    end
+
+    
+    ffi.copy(sky_buf, name)
+    local original_str = ffi.cast("uintptr_t*", skyname_strval_ptr)[0]
+    ffi.cast("uintptr_t*", skyname_strval_ptr)[0] = ffi.cast("uintptr_t", sky_buf)
+
+    -- call
+    local ok, err = pcall(r_loadskys_fn)
+
+    
+    ffi.cast("uintptr_t*", skyname_strval_ptr)[0] = original_str
+
+    if not ok then
+        print("[Sky] R_LoadSkys shitto errorito: " .. tostring(err))
+    else
+        print("[Sky] Sky changed: " .. name)
+    end
+end
+
+local last_idx   = -1
+local last_state = false
+
+callbacks.Register("CreateMove", "sky_createmove", function(cmd)
+    local enabled = skybox_enable:GetValue()
+    local idx     = skybox_list:GetValue()
+
+    if enabled ~= last_state or (enabled and idx ~= last_idx) then
+        last_state = enabled
+        last_idx   = idx
+
+        if enabled then
+            ApplySky(SKYBOXES[idx])
+        else
+            ApplySky(DEFAULT_SKY)
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    ApplySky(DEFAULT_SKY)
+end)
+
+print("skybox changer ready")
