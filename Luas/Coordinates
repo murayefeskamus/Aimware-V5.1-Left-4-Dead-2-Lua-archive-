@@ -1,0 +1,32 @@
+local font = draw.CreateFont("Tahoma", 13, 700)
+
+local function DrawOutlinedText(x, y, r, g, b, text)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 255)
+    draw.Text(x - 1, y - 1, text)
+    draw.Text(x + 1, y - 1, text)
+    draw.Text(x - 1, y + 1, text)
+    draw.Text(x + 1, y + 1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+callbacks.Register("Draw", "inf_coords", function()
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players then return end
+
+    local y = 10
+
+    for _, ent in pairs(players) do
+        if not ent:IsDormant() and ent:IsAlive() and ent:GetTeamNumber() == 3 then
+            local pos = ent:GetAbsOrigin()
+            if pos then
+                local name = ent:GetName() or "?"
+                DrawOutlinedText(10, y, 255, 80, 80, name)
+                y = y + 16
+                DrawOutlinedText(10, y, 255, 255, 255, string.format("X:%.0f Y:%.0f Z:%.0f", pos.x, pos.y, pos.z))
+                y = y + 18
+            end
+        end
+    end
+end)
