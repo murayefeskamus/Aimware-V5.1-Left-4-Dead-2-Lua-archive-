@@ -1,0 +1,116 @@
+--Retard Viewer
+
+local ref    = gui.Reference("Visuals", "Other")
+local gb     = gui.Groupbox(ref, "Car Alarm", 325, 315, 300, 0)
+local enable = gui.Checkbox(gb, "ca.enable", "Enable",         false)
+local dur    = gui.Slider(gb,   "ca.dur",    "Gösterim Süresi (s)", 5, 2, 15)
+local col    = gui.ColorPicker(gb, "ca.col", "Renk", 255, 180, 0, 255)
+
+local font_big = draw.CreateFont("Tahoma", 15, 700)
+local font_sm  = draw.CreateFont("Tahoma", 12, 600)
+
+local alarms = {}
+
+client.AllowListener("triggered_car_alarm")
+
+callbacks.Register("FireGameEvent", "ca_ev", function(event)
+    if not enable:GetValue() then return end
+    if event:GetName() ~= "triggered_car_alarm" then return end
+
+    local userid = event:GetInt("userid")
+    local pIdx   = client.GetPlayerIndexByUserID(userid)
+    local pName  = "?"
+    local pTeam  = 0
+
+    if pIdx and pIdx > 0 then
+        local ent = entities.GetByIndex(pIdx)
+        if ent then
+            pName = ent:GetName() or "?"
+            pTeam = ent:GetTeamNumber()
+        end
+    end
+
+    table.insert(alarms, 1, {
+        time  = globals.RealTime(),
+        name  = pName,
+        team  = pTeam,
+    })
+
+    if #alarms > 5 then table.remove(alarms) end
+
+    print(string.format("[Car Alarm] %s tetikledi", pName))
+end)
+
+callbacks.Register("Draw", "ca_draw", function()
+    if not enable:GetValue() then return end
+    if #alarms == 0 then return end
+
+    local now  = globals.RealTime()
+    local d    = dur:GetValue()
+    local r, g, b, _ = col:GetValue()
+    local sw, sh = draw.GetScreenSize()
+
+    local i = 1
+    while i <= #alarms do
+        if now - alarms[i].time > d then
+            table.remove(alarms, i)
+        else
+            i = i + 1
+        end
+    end
+
+    if #alarms == 0 then return end
+
+    local pad = 8
+    local lh  = 18
+    local w   = 260
+    local h   = pad*2 + 20 + #alarms * lh
+    local px  = sw/2 - w/2
+    local py  = sh * 0.2
+
+    draw.Color(0, 0, 0, 170)
+    draw.FilledRect(px, py, px+w, py+h)
+    draw.Color(r, g, b, 200)
+    draw.OutlinedRect(px, py, px+w, py+h)
+
+    draw.SetFont(font_big)
+    local title = "ARABA ALARMI"
+    local tw, _ = draw.GetTextSize(title)
+    draw.Color(0, 0, 0, 180)
+    draw.Text(px+w/2-tw/2+1, py+pad+1, title)
+    draw.Color(r, g, b, 255)
+    draw.Text(px+w/2-tw/2, py+pad, title)
+
+    draw.SetFont(font_sm)
+    local ly = py + pad + 20
+
+    for _, alarm in ipairs(alarms) do
+        local age   = now - alarm.time
+        local ratio = math.max(0, 1 - age/d)
+        local alpha = math.floor(ratio * 255)
+
+        local tr, tg, tb
+        if alarm.team == 2 then
+            tr, tg, tb = 80, 180, 255 
+        elseif alarm.team == 3 then
+            tr, tg, tb = 255, 80, 80    
+        else
+            tr, tg, tb = 200, 200, 200
+        end
+
+        local ago  = string.format("%.0fs önce", age)
+        local txt  = alarm.name .. " — " .. ago
+        local tw2, _ = draw.GetTextSize(txt)
+
+        draw.Color(0, 0, 0, math.floor(alpha*0.6))
+        draw.Text(px+pad+1, ly+1, txt)
+        draw.Color(tr, tg, tb, alpha)
+        draw.Text(px+pad, ly, txt)
+
+        ly = ly + lh
+    end
+end)
+
+callbacks.Register("Unload", function()
+    alarms = {}
+end)
