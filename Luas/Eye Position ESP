@@ -1,0 +1,178 @@
+aka lookatesp
+
+
+
+--lookat
+
+local ref = gui.Reference("Visuals", "World")
+local gb  = gui.Groupbox(ref, "Infected Lookat", 320, 400, 300, 0)
+
+local enable      = gui.Checkbox(gb, "inf.enable",    "Enable Lookat ESP",    true)
+local show_line   = gui.Checkbox(gb, "inf.line",      "Lookat Line",          true)
+local show_warn   = gui.Checkbox(gb, "inf.warn",      "Warn If Looking At Me",true)
+local show_lean   = gui.Checkbox(gb, "inf.lean",      "Lean Yaw Arrow",       true)
+local show_name   = gui.Checkbox(gb, "inf.name",      "Target Name",          true)
+local warn_dist   = gui.Slider(gb,   "inf.wdist",     "Warn Distance",        600, 50, 2000)
+local line_col    = gui.ColorPicker(gb, "inf.lcol",   "Line Color",    255, 180,  0,  255)
+local warn_col    = gui.ColorPicker(gb, "inf.wcol",   "Warn Color",    255,  50, 50,  255)
+local lean_col    = gui.ColorPicker(gb, "inf.leancol","Lean Color",    100, 255, 200, 255)
+
+local font     = draw.CreateFont("Tahoma", 12, 700)
+local font_big = draw.CreateFont("Tahoma", 16, 700)
+
+local function DrawOutlinedText(x, y, text, r, g, b, fnt)
+    draw.SetFont(fnt or font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+local function DrawLine3D(p1, p2, r, g, b, a)
+    local sx1, sy1 = client.WorldToScreen(p1)
+    local sx2, sy2 = client.WorldToScreen(p2)
+    if not sx1 or not sx2 then return end
+    draw.Color(0, 0, 0, math.floor(a * 0.4))
+    draw.Line(sx1+1, sy1+1, sx2+1, sy2+1)
+    draw.Color(r, g, b, a)
+    draw.Line(sx1, sy1, sx2, sy2)
+end
+
+callbacks.Register("Draw", "infected_lookat", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then return end
+    local mypos  = lp:GetAbsOrigin()
+    local myidx  = lp:GetIndex()
+    local sw, sh = draw.GetScreenSize()
+
+    local infected = entities.FindByClass("CCommonInfected") or {}
+
+    local warning_active = false
+    local warning_dist   = math.huge
+    local warning_name   = ""
+
+    for _, inf in pairs(infected) do
+        if not inf:IsAlive() then goto continue end
+        if inf:IsDormant()   then goto continue end
+
+        local infpos = inf:GetAbsOrigin()
+        if not infpos then goto continue end
+
+        local ok1, targetHandle = pcall(function()
+            return inf:GetPropInt("m_clientLookatTarget")
+        end)
+
+        local ok2, leanYaw = pcall(function()
+            return inf:GetPropFloat("m_clientLeanYaw")
+        end)
+
+        if show_line:GetValue() and ok1 and targetHandle and targetHandle > 0 then
+            local targetEnt = entities.GetByIndex(targetHandle % 2048)
+            if targetEnt and targetEnt:IsAlive() then
+                local targetPos = targetEnt:GetAbsOrigin()
+                if targetPos then
+                    local lr, lg, lb, la = line_col:GetValue()
+i
+                    local fromPos = infpos + Vector3(0, 0, 60)
+                    local toPos   = targetPos + Vector3(0, 0, 60)
+                    DrawLine3D(fromPos, toPos, lr, lg, lb, la)
+
+                    local tx, ty = client.WorldToScreen(toPos)
+                    if tx and ty then
+                        draw.Color(lr, lg, lb, la)
+                        draw.FilledCircle(tx, ty, 5)
+                        draw.Color(255, 255, 255, 200)
+                        draw.OutlinedCircle(tx, ty, 5)
+                    end
+
+                    if show_name:GetValue() then
+                        local tname = targetEnt:GetName() or "?"
+                        local ix, iy = client.WorldToScreen(infpos + Vector3(0, 0, 80))
+                        if ix and iy then
+                            local txt = "► " .. tname
+                            local tw, _ = draw.GetTextSize(txt)
+                            DrawOutlinedText(ix - tw/2, iy - 16, txt, lr, lg, lb)
+                        end
+                    end
+
+                    if show_warn:GetValue() then
+                        local targetIdx = targetEnt:GetIndex()
+                        if targetIdx == myidx then
+                            local d = (infpos - mypos):Length()
+                            if d < warning_dist then
+                                warning_active = true
+                                warning_dist   = d
+                                warning_name   = inf:GetClass()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if show_lean:GetValue() and ok2 and leanYaw and leanYaw ~= 0 then
+            local leanRad = leanYaw * (math.pi / 180)
+
+            local arrowLen = 50
+            local startPos = infpos + Vector3(0, 0, 50)
+            local endPos   = Vector3(
+                infpos.x + math.cos(leanRad) * arrowLen,
+                infpos.y + math.sin(leanRad) * arrowLen,
+                infpos.z + 50
+            )
+
+            local lr2, lg2, lb2, _ = lean_col:GetValue()
+            DrawLine3D(startPos, endPos, lr2, lg2, lb2, 200)
+
+            local ex, ey = client.WorldToScreen(endPos)
+            if ex and ey then
+                draw.Color(lr2, lg2, lb2, 220)
+                draw.FilledCircle(ex, ey, 4)
+            end
+
+            local ix, iy = client.WorldToScreen(startPos)
+            if ix and iy then
+                local txt = string.format("%.0f°", leanYaw)
+                local tw, _ = draw.GetTextSize(txt)
+                DrawOutlinedText(ix - tw/2, iy + 5, txt, lr2, lg2, lb2)
+            end
+        end
+
+        ::continue::
+    end
+
+    if warning_active then
+        local wr, wg, wb, _ = warn_col:GetValue()
+        local blink = math.floor(globals.RealTime() * 5) % 2 == 0
+
+        if blink then
+            local dist_m  = math.floor(warning_dist * 0.01905)
+            local txt     = "! INFECTED SANA BAKIYOR [" .. dist_m .. "m]"
+            draw.SetFont(font_big)
+            local tw, _ = draw.GetTextSize(txt)
+
+            draw.Color(0, 0, 0, 180)
+            draw.FilledRect(sw/2 - tw/2 - 8, sh * 0.2 - 4,
+                            sw/2 + tw/2 + 8, sh * 0.2 + 26)
+            draw.Color(wr, wg, wb, 200)
+            draw.OutlinedRect(sw/2 - tw/2 - 8, sh * 0.2 - 4,
+                              sw/2 + tw/2 + 8, sh * 0.2 + 26)
+
+            draw.Color(0, 0, 0, 200)
+            draw.Text(sw/2 - tw/2 + 1, sh * 0.2 + 1, txt)
+            draw.Color(wr, wg, wb, 255)
+            draw.Text(sw/2 - tw/2, sh * 0.2, txt)
+        end
+
+        local pulse = (math.sin(globals.RealTime() * 6) + 1) / 2
+        local pa    = math.floor(pulse * 120)
+        draw.Color(wr, wg, wb, pa)
+        draw.OutlinedRect(2, 2, sw-2, sh-2)
+        draw.OutlinedRect(4, 4, sw-4, sh-4)
+    end
+end)
