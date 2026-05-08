@@ -1,0 +1,64 @@
+just learnin whats tank rock define dunno its CBaseCSGrenadeProjectile lol 
+
+
+
+local font = draw.CreateFont("Tahoma", 12, 500)
+
+callbacks.Register("Draw", "rock_esp", function()
+
+    local rock = nil
+
+    local tank = nil
+    local players = entities.FindByClass("CTerrorPlayer")
+
+    for i = 1, #players do
+        if players[i]:GetPropInt("m_zombieClass") == 8 then
+            tank = players[i]
+            break
+        end
+    end
+
+    if not tank then return end
+
+    local tankPos = tank:GetAbsOrigin()
+    local bestDist = 99999
+
+    for i = 1, 2048 do
+        local ent = entities.GetByIndex(i)
+
+        if ent and ent:GetClass() == "CBaseCSGrenadeProjectile" then
+            local pos = ent:GetAbsOrigin()
+            local dist = (pos - tankPos):Length()
+
+            if dist < bestDist then
+                bestDist = dist
+                rock = ent
+            end
+        end
+    end
+
+    if not rock then return end
+
+    local pos = rock:GetAbsOrigin()
+    local x, y = client.WorldToScreen(pos)
+
+    if not x or not y then return end
+
+    local speed = 0
+
+    local ok, vel = pcall(function()
+        return rock:GetPropVector("m_vecVelocity")
+    end)
+
+    if ok and vel then
+        speed = math.floor(vel:Length())
+    end
+
+    draw.SetFont(font)
+    draw.Color(255, 50, 50, 255)
+    draw.Text(x, y, "ROCK")
+
+    draw.Color(255, 255, 255, 255)
+    draw.Text(x, y + 12, "vel: " .. speed)
+
+end)
