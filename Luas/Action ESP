@@ -1,0 +1,86 @@
+"e" button sht esp 
+
+
+
+local font     = draw.CreateFont("Tahoma", 13, 700)
+local ref      = gui.Reference("Visuals", "World")
+local gb       = gui.Groupbox(ref, "Action ESP", 16, 400, 200, 0)
+local enable   = gui.Checkbox(gb, "action.enable", "Enable", true)
+local heal_col = gui.ColorPicker(gb, "action.hcol", "Heal Rengi",  100, 255, 150, 255)
+local jen_col  = gui.ColorPicker(gb, "action.jcol", "Jen Rengi",   255, 200, 50,  255)
+
+local HEAL_DURATION = 5.0
+local JEN_DURATION  = 5.0  
+
+local action_start = {} 
+
+callbacks.Register("Draw", "action_esp", function()
+    if not enable:GetValue() then return end
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+    local now = globals.CurTime()
+
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+    for _, e in pairs(players) do
+        if e:IsDormant() then goto continue end
+        if not e:IsAlive() then goto continue end
+
+        local ok1, action = pcall(function() return e:GetPropInt("m_iCurrentUseAction") end)
+        local idx = e:GetIndex()
+
+        if ok1 and action and (action == 1 or action == 10) then
+            if not action_start[idx] then
+                action_start[idx] = {time = now, atype = action}
+            end
+        else
+            action_start[idx] = nil
+            goto continue
+        end
+
+        local data     = action_start[idx]
+        local elapsed  = now - data.time
+        local isHeal   = data.atype == 1
+        local duration = isHeal and HEAL_DURATION or JEN_DURATION
+        local pct      = math.min(1, elapsed / duration)
+
+        local hr, hg, hb, ha = heal_col:GetValue()
+        local jr, jg, jb, ja = jen_col:GetValue()
+        local r  = isHeal and hr or jr
+        local g  = isHeal and hg or jg
+        local b  = isHeal and hb or jb
+        local a  = isHeal and ha or ja
+
+        local label = isHeal and "HEAL" or "JENERATOR"
+
+        local pos = e:GetAbsOrigin()
+        if not pos then goto continue end
+
+        local sx, sy = client.WorldToScreen(pos + Vector3(0, 0, 90))
+        if not sx or not sy then goto continue end
+
+        local name = e:GetName() or "?"
+        local txt  = string.format("%s  %s  %.0f%%", name, label, pct * 100)
+
+        draw.SetFont(font)
+        local tw, th = draw.GetTextSize(txt)
+
+        local barW = tw + 8
+        local barH = 4
+        local bx   = sx - barW/2
+        local by   = sy + 4
+
+        draw.Color(0, 0, 0, 160)
+        draw.FilledRect(bx, by, bx + barW, by + barH)
+        draw.Color(r, g, b, 200)
+        draw.FilledRect(bx, by, bx + math.floor(barW * pct), by + barH)
+        draw.Color(0, 0, 0, 160)
+        draw.OutlinedRect(bx, by, bx + barW, by + barH)
+
+        draw.Color(0, 0, 0, 200)
+        draw.Text(sx - tw/2 + 1, sy - th + 1, txt)
+        draw.Color(r, g, b, a)
+        draw.Text(sx - tw/2, sy - th, txt)
+
+        ::continue::
+    end
+end)
