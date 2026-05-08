@@ -1,0 +1,112 @@
+Its not cs dont use it omg
+
+
+
+local font = draw.CreateFont("Tahoma", 16, 700)
+local alert_font = draw.CreateFont("Tahoma", 24, 800)
+
+local zoom_state = {}
+local zoom_alert_time = {}
+
+callbacks.Register("Draw", function()
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players then return end
+
+    draw.SetFont(font)
+
+    local y_offset = 300
+    local screen_w, screen_h = draw.GetScreenSize()
+
+    for _, ent in ipairs(players) do
+
+        if not ent then goto continue end
+        if not ent:IsAlive() then goto continue end
+        if ent:IsDormant() then goto continue end
+
+        if ent:GetTeamNumber() ~= 2 then goto continue end
+
+        local name = ent:GetName() or "Unknown"
+
+        local ok1, fov = pcall(function()
+            return ent:GetProp("m_iFOV")
+        end)
+
+        local ok2, defaultfov = pcall(function()
+            return ent:GetProp("m_iDefaultFOV")
+        end)
+
+        if not ok1 or not ok2 then goto continue end
+        if not fov or not defaultfov then goto continue end
+
+        local is_zoomed = (fov ~= 0 and fov < defaultfov)
+
+
+        draw.Color(255,255,255,255)
+        draw.Text(20, y_offset, name .. " | FOV: " .. fov)
+
+        if is_zoomed then
+            draw.Color(0,255,0,255)
+            draw.Text(220, y_offset, "ZOOMED")
+        end
+
+        y_offset = y_offset + 18
+
+
+        if is_zoomed then
+
+            local pos = ent:GetAbsOrigin() + Vector3(0,0,80)
+            local sx, sy = client.WorldToScreen(pos)
+
+            if sx and sy then
+
+                draw.Color(0,255,0,255)
+                draw.Text(sx - 25, sy, "ZOOM")
+                draw.Text(sx - 25, sy + 15, "FOV: "..fov)
+
+            end
+        end
+
+
+        local index = ent:GetIndex()
+
+        if zoom_state[index] == nil then
+            zoom_state[index] = false
+        end
+
+        if is_zoomed and not zoom_state[index] then
+
+            zoom_state[index] = true
+            zoom_alert_time[index] = globals.RealTime()
+
+        elseif not is_zoomed then
+
+            zoom_state[index] = false
+
+        end
+
+        if zoom_alert_time[index] then
+
+            local elapsed = globals.RealTime() - zoom_alert_time[index]
+
+            if elapsed < 2.5 then
+
+                draw.SetFont(alert_font)
+                draw.Color(255,255,0,255)
+
+                draw.Text(
+                    screen_w/2 - 100,
+                    screen_h/2 - 40,
+                    name .. " ZOOMED!"
+                )
+
+                draw.SetFont(font)
+
+            else
+                zoom_alert_time[index] = nil
+            end
+        end
+
+        ::continue::
+    end
+end)
