@@ -1,0 +1,52 @@
+pub vers. basic translate with translator apis
+
+
+-- TRANSLATOR  by murayefeskamus
+local ref = gui.Reference("Misc")
+local tab = gui.Tab(ref, "translator.tab", "Translator")
+
+local box = gui.Groupbox(tab, "Translate & Send", 10, 10, 300, 180)
+
+local input = gui.Editbox(box, "translator.text", "")
+local lang  = gui.Combobox(box, "translator.lang", "Language", "Turkce", "Rusca", "Ispanyolca")
+
+local team_only = gui.Checkbox(box, "translator.team", "Team Chat Only", false)
+
+local function URLEncode(str)
+    str = str:gsub("([^%w%-%.%_%~ ])", function(c)
+        return string.format("%%%02X", string.byte(c))
+    end)
+    return str:gsub(" ", "+")
+end
+
+gui.Button(box, "Send", function()
+
+    local text = input:GetValue()
+    if text == "" then return end
+
+    local lang_map = {
+        [0] = "tr",
+        [1] = "ru",
+        [2] = "es"
+    }
+
+    local target = lang_map[lang:GetValue()] or "tr"
+
+    local url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" .. target .. "&dt=t&q=" .. URLEncode(text)
+
+    http.Get(url, function(res)
+        if not res then return end
+
+        local translated = res:match('%[%["([^"]+)"')
+        if not translated then return end
+
+        print("[TRANSLATED] " .. translated)
+
+        if team_only:GetValue() then
+            client.ChatTeamSay(translated)
+        else
+            client.ChatSay(translated)
+        end
+    end)
+
+end)
