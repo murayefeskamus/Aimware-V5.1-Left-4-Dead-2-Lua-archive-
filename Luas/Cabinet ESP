@@ -1,0 +1,42 @@
+local font   = draw.CreateFont("Tahoma", 13, 700)
+local ref    = gui.Reference("Visuals", "World")
+local gb     = gui.Groupbox(ref, "Health Cabinet ESP", 16, 200, 200, 0)
+local enable   = gui.Checkbox(gb, "hcab.enable", "Enable", true)
+local max_dist = gui.Slider(gb, "hcab.dist", "Max Mesafe (m)", 50, 5, 200)
+local col      = gui.ColorPicker(gb, "hcab.col", "Renk", 50, 255, 100, 255)
+
+callbacks.Register("Draw", "hcab_esp", function()
+    if not enable:GetValue() then return end
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+    local mypos  = me:GetAbsOrigin()
+    local max_m  = max_dist:GetValue()
+    local r, g, b, a = col:GetValue()
+
+    local cabs = entities.FindByClass("CDynamicProp") or {}
+    for _, e in pairs(cabs) do
+        local ok, name = pcall(function() return e:GetName() end)
+        if not ok or not name then goto continue end
+        if not (name:lower():find("medical") or name:lower():find("medkit")) then goto continue end
+
+        local ok2, pos = pcall(function() return e:GetAbsOrigin() end)
+        if not ok2 or not pos then goto continue end
+
+        local dist = (pos - mypos):Length() * 0.01905
+        if dist > max_m then goto continue end
+
+        local sx, sy = client.WorldToScreen(pos + Vector3(0, 0, 40))
+        if not sx or not sy then goto continue end
+
+        draw.SetFont(font)
+        local txt = "Health Cabinet"
+        local tw, th = draw.GetTextSize(txt)
+
+        draw.Color(0, 0, 0, 200)
+        draw.Text(sx - tw/2 + 1, sy - th/2 + 1, txt)
+        draw.Color(r, g, b, a)
+        draw.Text(sx - tw/2, sy - th/2, txt)
+
+        ::continue::
+    end
+end)
