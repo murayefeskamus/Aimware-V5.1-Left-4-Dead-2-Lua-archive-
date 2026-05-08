@@ -1,0 +1,116 @@
+--rock predict try 
+
+local font = draw.CreateFont("Tahoma", 12, 500)
+
+local GRAVITY = 15
+local STEP = 0.05
+local MAX_STEPS = 60
+
+local lockedVel = nil
+local lockedPos = nil
+local lockedTime = 0
+local LOCK_DURATION = 0.3
+
+
+local function GetRock()
+    local tank = nil
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    for i = 1, #players do
+        if players[i]:GetPropInt("m_zombieClass") == 8 then
+            tank = players[i]
+            break
+        end
+    end
+
+    if not tank then return nil end
+
+    local tankPos = tank:GetAbsOrigin()
+
+    local best = nil
+    local bestDist = 99999
+
+    for i = 1, 2048 do
+        local ent = entities.GetByIndex(i)
+
+        if ent and ent:GetClass() == "CBaseCSGrenadeProjectile" then
+            local pos = ent:GetAbsOrigin()
+            local dist = (pos - tankPos):Length()
+
+            if dist < bestDist then
+                bestDist = dist
+                best = ent
+            end
+        end
+    end
+
+    return best
+end
+
+
+callbacks.Register("Draw", "rock_predict", function()
+
+    local rock = GetRock()
+
+    if not rock then
+        lockedVel = nil
+        lockedPos = nil
+        return
+    end
+
+    local pos = rock:GetAbsOrigin()
+
+    local ok, vel = pcall(function()
+        return rock:GetPropVector("m_vecVelocity")
+    end)
+
+    if not ok or not vel then return end
+
+    if not lockedVel or globals.RealTime() - lockedTime > LOCK_DURATION then
+        lockedVel = Vector3(vel.x, vel.y, vel.z)
+        lockedPos = Vector3(pos.x, pos.y, pos.z)
+        lockedTime = globals.RealTime()
+    end
+
+    local simPos = Vector3(lockedPos.x, lockedPos.y, lockedPos.z)
+    local simVel = Vector3(lockedVel.x, lockedVel.y, lockedVel.z)
+
+    local lastX, lastY = nil, nil
+    local impactPos = nil
+
+    for i = 1, MAX_STEPS do
+
+        simPos = simPos + simVel * STEP
+
+        simVel.z = simVel.z - GRAVITY
+
+        local x, y = client.WorldToScreen(simPos)
+
+        if x and y then
+            if lastX and lastY then
+                draw.Color(255, 120, 120, 200)
+                draw.Line(lastX, lastY, x, y)
+            end
+            lastX, lastY = x, y
+        end
+
+        if simPos.z < lockedPos.z - 300 then
+            impactPos = Vector3(simPos.x, simPos.y, simPos.z)
+            break
+        end
+    end
+
+    if impactPos then
+        local x, y = client.WorldToScreen(impactPos)
+
+        if x and y then
+            draw.Color(255, 0, 0, 255)
+            draw.OutlinedCircle(x, y, 8)
+
+            draw.SetFont(font)
+            draw.Color(255, 255, 255, 255)
+            draw.Text(x + 10, y, "impact")
+        end
+    end
+
+end)
