@@ -1,0 +1,91 @@
+local font = draw.CreateFont("Tahoma", 18, 700)
+
+local stats = {}
+
+callbacks.Register("FireGameEvent", function(e)
+
+    local name = e:GetName()
+
+    if name == "round_start" or name == "map_transition" then
+        stats = {}
+    end
+
+end)
+
+callbacks.Register("FireGameEvent", function(event)
+
+    if event:GetName() ~= "player_hurt" then return end
+
+    local attackerID = event:GetInt("attacker")
+    local dmg = event:GetInt("dmg_health")
+
+    if attackerID == 0 then return end
+
+    local attackerIndex = client.GetPlayerIndexByUserID(attackerID)
+    if not attackerIndex then return end
+
+    local attacker = entities.GetByIndex(attackerIndex)
+    if not attacker then return end
+
+    if attacker:GetTeamNumber() ~= 2 then return end
+
+    local name = attacker:GetName() or "Unknown"
+
+    if stats[name] == nil then
+        stats[name] = {dmg = 0, kills = 0}
+    end
+
+    stats[name].dmg = stats[name].dmg + dmg
+
+end)
+
+callbacks.Register("FireGameEvent", function(event)
+
+    if event:GetName() ~= "player_death" then return end
+
+    local attackerID = event:GetInt("attacker")
+    if attackerID == 0 then return end
+
+    local attackerIndex = client.GetPlayerIndexByUserID(attackerID)
+    if not attackerIndex then return end
+
+    local attacker = entities.GetByIndex(attackerIndex)
+    if not attacker then return end
+
+    if attacker:GetTeamNumber() ~= 2 then return end
+
+    local name = attacker:GetName() or "Unknown"
+
+    if stats[name] == nil then
+        stats[name] = {dmg = 0, kills = 0}
+    end
+
+    stats[name].kills = stats[name].kills + 1
+
+end)
+
+callbacks.Register("Draw", function()
+
+    draw.SetFont(font)
+
+    local y = 200
+
+    draw.Color(255,255,0,255)
+    draw.Text(20, y, "Survivor Stats")
+    y = y + 25
+
+    for name, data in pairs(stats) do
+
+        draw.Color(255,255,255,255)
+
+        draw.Text(
+            20,
+            y,
+            name .. " | " .. data.dmg .. " DMG | " .. data.kills .. " KILLS"
+        )
+
+        y = y + 20
+
+    end
+
+end)
