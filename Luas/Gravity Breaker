@@ -1,0 +1,51 @@
+Local Games Only
+
+
+
+local ref = gui.Reference("Misc", "General", "Extra")
+local gb  = gui.Groupbox(ref, "High Jump", 325, 315, 300, 0)
+
+local enable      = gui.Checkbox(gb, "hj.enable",  "Enable High Jump",   false)
+local key_sel     = gui.Combobox(gb, "hj.key",     "Hold Key", "Alt", "Shift", "Ctrl", "X", "Z", "V")
+local grav_val    = gui.Slider(gb,   "hj.grav",    "Gravity",            100, 1, 800)
+
+local KEY_MAP = {
+    [0] = 164,
+    [1] = 160,
+    [2] = 162,
+    [3] = string.byte("X"),
+    [4] = string.byte("Z"),
+    [5] = string.byte("V"),
+}
+
+local normal_grav = 800
+local is_active   = false
+
+callbacks.Register("CreateMove", "highjump", function(cmd)
+    if not enable:GetValue() then
+        if is_active then
+            client.Command("sv_gravity " .. normal_grav, true)
+            is_active = false
+        end
+        return
+    end
+
+    local keycode = KEY_MAP[key_sel:GetValue()] or 164
+    local held    = input.IsButtonDown(keycode)
+
+    if held then
+        if not is_active then
+            client.Command("sv_gravity " .. grav_val:GetValue(), true)
+            is_active = true
+        end
+    else
+        if is_active then
+            client.Command("sv_gravity " .. normal_grav, true)
+            is_active = false
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    client.Command("sv_gravity " .. normal_grav, true)
+end)
