@@ -1,0 +1,109 @@
+--ping
+
+local ref = gui.Reference("Visuals","World")
+local box = gui.Groupbox(ref,"Ping ESP",320,400,300)
+
+local enable = gui.Checkbox(box,"pingesp.enable","Enable",1)
+
+local font = draw.CreateFont("Tahoma",16,700)
+
+local function GetPing(index)
+
+    local res = entities.FindByClass("CTerrorPlayerResource")
+
+    if res == nil or #res == 0 then
+        return 0
+    end
+
+    local pr = res[1]
+
+    return pr:GetPropInt("m_iPing",index) or 0
+end
+
+
+local function GetColor(ping)
+
+    if ping <= 70 then
+        return 0,255,0
+    elseif ping <= 140 then
+        return 255,170,0
+    else
+        return 255,0,0
+    end
+end
+
+
+local function DrawBars(x,y,ping,r,g,b)
+
+    local bars = 3
+
+    if ping > 140 then
+        bars = 1
+    elseif ping > 70 then
+        bars = 2
+    end
+
+    local w = 3
+    local h = 3
+    local gap = 2
+
+    for i=1,3 do
+
+        if i <= bars then
+            draw.Color(r,g,b,255)
+        else
+            draw.Color(60,60,60,200)
+        end
+
+        draw.FilledRect(
+            x + (i*(w+gap)),
+            y - (i*2),
+            x + (i*(w+gap)) + w,
+            y
+        )
+    end
+end
+
+
+callbacks.Register("Draw",function()
+
+    if not enable:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+
+    draw.SetFont(font)
+
+    local players = entities.FindByClass("CTerrorPlayer")
+
+    for i,ent in pairs(players) do
+
+        if not ent:IsAlive() then goto skip end
+        if ent:IsDormant() then goto skip end
+        if ent == me then goto skip end
+
+        local head = ent:GetHitboxPosition(10)
+        if head == nil then goto skip end
+
+        local sx,sy = client.WorldToScreen(head)
+        if sx == nil then goto skip end
+
+        local ping = GetPing(ent:GetIndex())
+
+        local r,g,b = GetColor(ping)
+
+        local text = ping .. "ms"
+
+        draw.Color(r,g,b,255)
+
+        local tw,th = draw.GetTextSize(text)
+
+        draw.Text(sx - tw/2, sy-10, text)
+
+        DrawBars(sx + tw/2 + 4, sy-4, ping, r,g,b)
+
+        ::skip::
+
+    end
+
+end)
