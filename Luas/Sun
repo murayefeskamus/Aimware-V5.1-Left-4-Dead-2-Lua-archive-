@@ -1,0 +1,78 @@
+idk why i did this 
+
+
+
+
+
+--suuuun
+
+local ref = gui.Reference("Visuals", "Other")
+local gb  = gui.Groupbox(ref, "Sun Info ESP", 325, 315, 300, 0)
+
+local enable      = gui.Checkbox(gb, "sun.enable",   "Enable Sun ESP", true)
+local show_on     = gui.Checkbox(gb, "sun.show_on",  "Show On/Off",    true)
+local show_size   = gui.Checkbox(gb, "sun.show_size","Show Size",      true)
+local show_color  = gui.Checkbox(gb, "sun.show_col", "Show Color",     true)
+
+local font = draw.CreateFont("Tahoma", 13, 600)
+
+local function UnpackColor(packed)
+    local r = bit.band(packed, 0xFF)
+    local g = bit.band(bit.rshift(packed, 8),  0xFF)
+    local b = bit.band(bit.rshift(packed, 16), 0xFF)
+    return r, g, b
+end
+
+callbacks.Register("Draw", "sun_info", function()
+    if not enable:GetValue() then return end
+
+    local suns = entities.FindByClass("CSun") or {}
+    for _, sun in pairs(suns) do
+        if sun:IsDormant() then goto continue end
+
+        local lp = entities.GetLocalPlayer()
+        if not lp then goto continue end
+
+        local ok, dir = pcall(function() return sun:GetPropVector("m_vDirection") end)
+        if not ok or not dir then goto continue end
+
+        local eyePos = lp:GetAbsOrigin() + Vector3(0, 0, 64)
+        local sunPos = eyePos + dir * 10000
+
+        local sx, sy = client.WorldToScreen(sunPos)
+        if not sx or not sy then goto continue end
+
+        local lines = { "[ SUN ]" }
+
+        if show_on:GetValue() then
+            local on = sun:GetPropInt("m_bOn") or 0
+            table.insert(lines, "On: " .. (on == 1 and "YES" or "NO"))
+        end
+
+        if show_size:GetValue() then
+            local size = sun:GetPropInt("m_nSize") or 0
+            table.insert(lines, "Size: " .. size)
+        end
+
+        if show_color:GetValue() then
+            local clr = sun:GetPropInt("m_clrRender") or 0
+            local r, g, b = UnpackColor(clr)
+            table.insert(lines, "Color: " .. r .. ", " .. g .. ", " .. b)
+        end
+
+        draw.SetFont(font)
+        for i, line in ipairs(lines) do
+            local tw, _ = draw.GetTextSize(line)
+            draw.Color(0, 0, 0, 180)
+            draw.Text(sx - tw/2 + 1, sy + (i-1)*16 + 1, line)
+            if i == 1 then
+                draw.Color(255, 220, 50, 255)
+            else
+                draw.Color(255, 255, 255, 220)
+            end
+            draw.Text(sx - tw/2, sy + (i-1)*16, line)
+        end
+
+        ::continue::
+    end
+end)
