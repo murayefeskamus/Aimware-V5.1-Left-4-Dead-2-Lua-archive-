@@ -1,0 +1,62 @@
+local font   = draw.CreateFont("Tahoma", 13, 700)
+local ref    = gui.Reference("Visuals", "World")
+local gb     = gui.Groupbox(ref, "Rescue Door ESP", 16, 400, 200, 0)
+local enable   = gui.Checkbox(gb, "rdoor.enable", "Enable", true)
+local max_dist = gui.Slider(gb, "rdoor.dist", "Max Mesafe (m)", 100, 5, 500)
+local col      = gui.ColorPicker(gb, "rdoor.col", "Renk", 50, 255, 150, 255)
+
+local door_cache = {}
+local last_scan  = 0
+
+local function ScanDoors()
+    local now = globals.RealTime()
+    if now - last_scan < 5 then return end
+    last_scan = now
+
+    door_cache = {}
+    for i = 1, 512 do
+        local ok, e = pcall(function() return entities.GetByIndex(i) end)
+        if ok and e then
+            local ok2, v = pcall(function() return e:GetPropInt("m_isRescueDoor") end)
+            if ok2 and v and v ~= 0 then
+                table.insert(door_cache, e)
+            end
+        end
+    end
+end
+
+callbacks.Register("Draw", "rdoor_esp", function()
+    if not enable:GetValue() then return end
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+    local mypos  = me:GetAbsOrigin()
+    local max_m  = max_dist:GetValue()
+    local r, g, b, a = col:GetValue()
+
+    ScanDoors()
+
+    for _, e in ipairs(door_cache) do
+        local ok, pos = pcall(function() return e:GetAbsOrigin() end)
+        if not ok or not pos then goto continue end
+
+        local dist = (pos - mypos):Length() * 0.01905
+        if dist > max_m then goto continue end
+
+        local sx, sy = client.WorldToScreen(pos + Vector3(0, 0, 50))
+        if not sx or not sy then goto continue end
+
+        local txt = string.format("Rescue Door  %.0fm", dist)
+        draw.SetFont(font)
+        local tw, th = draw.GetTextSize(txt)
+
+        draw.Color(0, 0, 0, 160)
+        draw.FilledRect(sx - tw/2 - 4, sy - th - 4, sx + tw/2 + 4, sy + 4)
+        draw.Color(r, g, b, a)
+        draw.OutlinedRect(sx - tw/2 - 4, sy - th - 4, sx + tw/2 + 4, sy + 4)
+        draw.Color(r, g, b, a)
+        draw.Text(sx - tw/2, sy - th, txt)
+        draw.FilledCircle(sx, sy, 3)
+
+        ::continue::
+    end
+end)
