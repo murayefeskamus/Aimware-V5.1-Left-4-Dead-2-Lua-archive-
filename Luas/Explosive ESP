@@ -1,0 +1,52 @@
+same as "Hittible ESP" lua. I used map tumtara for xmaple indexes. Just use my index finder lua for findin idxes and read it so basic shit there s
+another xample 
+
+
+
+
+
+local font = draw.CreateFont("Tahoma", 13, 700)
+
+local EXPLOSIVE_MODELS = {
+    [449] = { label = "PATLAK FICI",     r = 255, g = 80,  b = 80  },
+    [242] = { label = "HAVAI FISEK",    r = 255, g = 165, b = 0   },
+    [220] = { label = "OKSIJEN TUPU",      r = 0,   g = 255, b = 100 },
+    [209] = { label = "GAZ TUPU",  r = 0,   g = 200, b = 255 },
+}
+
+local function DrawOutlinedText(x, y, r, g, b, text)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 255)
+    draw.Text(x-1, y-1, text)
+    draw.Text(x+1, y-1, text)
+    draw.Text(x-1, y+1, text)
+    draw.Text(x+1, y+1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+callbacks.Register("Draw", "explosive_esp", function()
+    local ents = entities.FindByClass("CPhysicsProp")
+    if not ents then return end
+
+    for _, ent in pairs(ents) do
+        if not ent:IsDormant() then
+            local ok, idx = pcall(function()
+                return ent:GetPropInt("m_nModelIndex")
+            end)
+            if ok and idx then
+                local info = EXPLOSIVE_MODELS[idx]
+                if info then
+                    local origin = ent:GetAbsOrigin()
+                    if origin then
+                        local sx, sy = client.WorldToScreen(
+                            Vector3(origin.x, origin.y, origin.z + 10))
+                        if sx then
+                            DrawOutlinedText(sx, sy, info.r, info.g, info.b, info.label)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
