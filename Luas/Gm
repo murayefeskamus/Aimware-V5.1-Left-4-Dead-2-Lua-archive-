@@ -1,0 +1,271 @@
+not mine
+
+
+
+
+
+local gui_Reference = gui.Reference
+local gui_Keybox = gui.Keybox
+local gui_Checkbox = gui.Checkbox
+local gui_GetValue = gui.GetValue
+local gui_SetValue = gui.SetValue
+local draw_CreateFont = draw.CreateFont
+local draw_SetFont = draw.SetFont
+local draw_GetScreenSize = draw.GetScreenSize
+local draw_Color = draw.Color
+local draw_Text = draw.Text
+local draw_GetTextSize = draw.GetTextSize
+local entities_GetLocalPlayer = entities.GetLocalPlayer
+local entities_FindByClass = entities.FindByClass
+local client_GetLocalPlayerIndex = client.GetLocalPlayerIndex
+local client_GetPlayerIndexByUserID = client.GetPlayerIndexByUserID
+local client_AllowListener = client.AllowListener
+local callbacks_Register = callbacks.Register
+local globals_CurTime = globals.CurTime
+local globals_TickInterval = globals.TickInterval
+local globals_RealTime = globals.RealTime
+local input_IsButtonDown = input.IsButtonDown
+local math_abs = math.abs
+local math_floor = math.floor
+local math_deg = math.deg
+local math_acos = math.acos
+local math_sqrt = math.sqrt
+local string_format = string.format
+local bit_band = bit.band
+local bit_bor = bit.bor
+local bit_bnot = bit.bnot
+local bit_lshift = bit.lshift
+
+local config = {
+    misc = gui_Reference("Misc", "General", "Extra"),
+    keys = {
+        lag1 = gui_Keybox(gui.Reference("Misc", "General", "Extra"), "shit_lag1", "Instant interaction", 69),
+        lag2 = gui_Keybox(gui.Reference("Misc", "General", "Extra"), "shit_lag2", "Instant items", 18),
+        lag3 = gui_Keybox(gui.Reference("Misc", "General", "Extra"), "shit_lag3", "God Mode", 5),
+        speedhack = gui_Keybox(gui.Reference("Misc", "General", "Extra"), "shit_sphk", "Speedhack", 16)
+    },
+    checks = {
+        speedbox = gui_Checkbox(gui.Reference("Misc", "General", "Extra"), "shit_speed", "Show speed", true),
+        lagbox = gui_Checkbox(gui.Reference("Misc", "General", "Extra"), "shit_lag", "Show Lag", true),
+        fastladder = gui_Checkbox(gui.Reference("Misc", "General", "Extra"), "fastladder", "Fast ladder climb", false)
+    },
+    font = draw_CreateFont("Segoe UI Black", 30, 800),
+    timer = {
+        value = 0,
+        duration = 5.4
+    }
+}
+
+config.checks.fastladder:SetDescription("Fast ladder ascent/descent")
+
+local IN_MOVELEFT = 9
+local IN_MOVERIGHT = 10
+local LADDER_FLAG = bit_lshift(1, 8)
+local ladder_delay_time = 0.1
+local ladder_last_time = 0
+
+local function onFastLadderMove(fcmd)
+    if not gui_GetValue("misc.master") or not config.checks.fastladder:GetValue() then 
+        ladder_last_time = 0
+        return 
+    end
+    
+    local localPlayer = entities_GetLocalPlayer()
+    if not localPlayer then return end
+    
+    if bit_band(localPlayer:GetPropInt("m_nRenderMode"), LADDER_FLAG) == 0 then
+        ladder_last_time = 0
+        return
+    end
+
+    local current_time = globals_RealTime()
+    if ladder_last_time == 0 then
+        ladder_last_time = current_time
+    end
+
+    if current_time - ladder_last_time > ladder_delay_time then
+        local ladderNormal = localPlayer:GetPropVector("m_vecLadderNormal")
+        local forwardmove = fcmd.forwardmove
+        
+        if forwardmove == 0 then return end
+        
+        if forwardmove > 0 then
+            fcmd.buttons = bit_band(bit_bor(fcmd.buttons, bit_lshift(1, IN_MOVELEFT)), bit_bnot(bit_lshift(1, IN_MOVERIGHT)))
+        else
+            fcmd.buttons = bit_band(bit_bor(fcmd.buttons, bit_lshift(1, IN_MOVERIGHT)), bit_bnot(bit_lshift(1, IN_MOVELEFT)))
+        end
+        
+        local yaw = math_deg(math_acos(ladderNormal.x)) + (ladderNormal.y < 0 and 180 or 0) + 90
+        local ladderAngles = EulerAngles(-89, yaw, 0)
+        ladderAngles:Normalize()
+        fcmd.viewangles = ladderAngles
+    end
+end
+
+
+local function anyKeyNotSet()
+    for _, keybox in pairs(config.keys) do
+        if keybox:GetValue() == 0 then
+            return true
+        end
+    end
+    return false
+end
+
+local function handleGameEvent(Event)
+    local eventMap = {
+        heal_begin = true,
+        upgrade_pack_begin = true,
+        defibrillator_begin = true
+    }
+    
+    local eventName = Event:GetName()
+    if eventMap[eventName] then
+        local localIdx = client_GetLocalPlayerIndex()
+        if client_GetPlayerIndexByUserID(Event:GetInt("userid")) == localIdx then
+            gui_SetValue("misc.exploits.lagcmds", 0)
+        end
+    end
+end
+
+local eventList = {"heal_begin", "upgrade_pack_begin", "defibrillator_begin"}
+for _, event in ipairs(eventList) do
+    client_AllowListener(event)
+end
+callbacks_Register("FireGameEvent", handleGameEvent)
+
+local lastDrawTime = 0
+local targetFPS = 62
+local frameInterval = 1 / targetFPS
+
+local function optimizedDraw()
+    local currentTime = globals_CurTime()
+    lastDrawTime = currentTime
+
+    local player = entities_GetLocalPlayer()
+    if not player or not player:IsPlayer() then return end
+    
+    local w, h = draw_GetScreenSize()
+    local centerX = w / 2
+    local infoY = h - 60
+    local timerY = h - 40
+    local speedY = h - 20
+
+    
+    if anyKeyNotSet() then
+        draw_SetFont(config.font)
+        draw_Color(255, 50, 50, 255)
+        local warnText = "Key not set → function disabled!"
+        local textWidth, textHeight = draw_GetTextSize(warnText)
+        draw_Text((w - textWidth) / 2, (h - textHeight) / 2, warnText)
+    end
+
+    draw_SetFont(config.font)
+    
+    if config.checks.lagbox:GetValue() then
+        draw_Color(255, 255, 0, 255)
+        draw_Text(centerX, infoY, tostring(gui_GetValue("misc.exploits.lagcmds")))
+    end
+    
+    local currentTimeValue = globals_CurTime()
+    if config.timer.value <= currentTimeValue then
+        config.timer.value = 0
+        draw_Color(60, 179, 113, 255)
+        draw_Text(centerX, timerY, "Ready")
+    elseif config.timer.value ~= 0 then
+        local counter = math_abs(string_format("%.1f", 
+            config.timer.duration - (config.timer.value - currentTimeValue) - config.timer.duration))
+        draw_Color(255, 0, 0, 255)
+        draw_Text(centerX, timerY, "Time: " .. counter)
+    end
+    
+    if config.checks.speedbox:GetValue() then
+        draw_Color(225, 255, 255, 255)
+        local velocity = player:GetPropVector("localdata", "m_vecVelocity[0]")
+        
+        local speedSqr = velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z
+        draw_Text(centerX, speedY, tostring(math_floor(math_sqrt(speedSqr))))
+    end
+end
+
+local function createOptimizedMoveHandler()
+    local entityConfig = {
+        CPropMinigun = { rangeSqr = 110 * 110, action = function() gui_SetValue("misc.exploits.lagcmds", 0) end },
+        CPropMountedGun = { rangeSqr = 110 * 110, action = function() gui_SetValue("misc.exploits.lagcmds", 0) end },
+        CPointPropUseTarget = { 
+            rangeSqr = 70 * 70, 
+            action = function() 
+                gui_SetValue("misc.exploits.lagcmds", 
+                    input_IsButtonDown(config.keys.lag1:GetValue()) and 0 or 150) 
+            end 
+        },
+        CButtonTimed = { 
+            rangeSqr = 110 * 110, 
+            action = function() 
+                gui_SetValue("misc.exploits.lagcmds",
+                    input_IsButtonDown(config.keys.lag1:GetValue()) and 0 or 800) 
+            end 
+        }
+    }
+
+    return function(cmd)
+        onFastLadderMove(cmd)
+        local player = entities_GetLocalPlayer()
+        if not player then return end
+        
+        local keyStates = {
+            lag1 = input_IsButtonDown(config.keys.lag1:GetValue()),
+            lag2 = input_IsButtonDown(config.keys.lag2:GetValue()),
+            lag3 = input_IsButtonDown(config.keys.lag3:GetValue()),
+            speedhack = input_IsButtonDown(config.keys.speedhack:GetValue())
+        }
+        
+        local playerPos = player:GetAbsOrigin()
+        local entityFound = false
+        
+        for class, handler in pairs(entityConfig) do
+            for _, ent in pairs(entities_FindByClass(class)) do
+                local entPos = ent:GetAbsOrigin()
+                local delta = playerPos - entPos
+                local distSqr = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z
+                
+                if distSqr < handler.rangeSqr then
+                    handler.action()
+                    entityFound = true
+                    break
+                end
+            end
+            if entityFound then break end
+        end
+        
+        if keyStates.lag1 then
+            gui_SetValue("misc.exploits.lagcmds", 0)
+	    elseif keyStates.lag2 then
+			gui_SetValue("misc.exploits.lag", config.keys.lag2:GetValue())
+        elseif keyStates.lag3 then
+            gui_SetValue("misc.speedhack.key", config.keys.lag3:GetValue())
+			gui_SetValue("misc.exploits.lag", config.keys.lag3:GetValue())
+            gui_SetValue("misc.exploits.lagcmds", 10000)
+            gui_SetValue("misc.speedhack.amount", 14)
+            gui_SetValue("misc.speedhack.enable", 1)
+        elseif keyStates.speedhack then
+            gui_SetValue("misc.speedhack.key", config.keys.speedhack:GetValue())
+            gui_SetValue("misc.speedhack.enable", 1)
+        elseif not entityFound then
+            local tickInterval = globals_TickInterval()
+            local baseLagValue = (math_floor(1 / tickInterval) + 1) * 5
+			gui_SetValue("misc.exploits.lag", config.keys.lag1:GetValue())
+            gui_SetValue("misc.exploits.lagcmds", baseLagValue)
+            gui_SetValue("misc.speedhack.enable", 0)
+        end
+        
+        if (bit_band(cmd.buttons, bit_lshift(1, 0)) > 0 or 
+            bit_band(cmd.buttons, bit_lshift(1, 11)) > 0) and 
+            not keyStates.lag2 then
+            config.timer.value = globals_CurTime() + config.timer.duration
+        end
+    end
+end
+
+callbacks_Register("Draw", optimizedDraw)
+callbacks_Register("CreateMove", createOptimizedMoveHandler())
