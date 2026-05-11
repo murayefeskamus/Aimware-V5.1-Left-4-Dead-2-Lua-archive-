@@ -1,0 +1,63 @@
+local ref = gui.Reference("Visuals", "World")
+local box = gui.Groupbox(ref, "Hitbox ESP", 320, 500, 305, 0)
+
+local enable = gui.Checkbox(box, "hitbox.enable", "Enable Hitbox ESP", false)
+local draw_box = gui.Checkbox(box, "hitbox.box", "Draw Box", true)
+local draw_point = gui.Checkbox(box, "hitbox.point", "Draw Point", false)
+
+local size = gui.Slider(box, "hitbox.size", "Point Size", 4, 2, 10, 1)
+local colorpicker = gui.ColorPicker(box, "hitbox.color", "Hitbox Color", 255,0,0,255)
+
+local function DrawHitbox(pos)
+    local x, y = client.WorldToScreen(pos)
+    if not x then return end
+
+    local s = size:GetValue()
+
+    if draw_box:GetValue() then
+        draw.OutlinedRect(x - s, y - s, x + s, y + s)
+    end
+
+    if draw_point:GetValue() then
+        draw.FilledRect(x - 1, y - 1, x + 1, y + 1)
+    end
+end
+
+callbacks.Register("Draw", function()
+    if not enable:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players then return end
+
+    local r,g,b,a = colorpicker:GetValue()
+    draw.Color(r,g,b,a)
+
+    for _, player in pairs(players) do
+
+        if player:GetIndex() == me:GetIndex() then goto continue end
+        if not player:IsAlive() or player:IsDormant() then goto continue end
+
+        local hitboxes = {
+            0,  -- Head
+            2,  -- Pelvis
+            3,  -- Stomach
+            4,  -- Chest
+            6,7, -- Sol bacak
+            9,10, -- Sol kol
+            13,14, -- Sağ kol
+            15,16 -- Sağ bacak
+        }
+
+        for _, id in pairs(hitboxes) do
+            local pos = player:GetHitboxPosition(id)
+            if pos then
+                DrawHitbox(pos)
+            end
+        end
+
+        ::continue::
+    end
+end)
