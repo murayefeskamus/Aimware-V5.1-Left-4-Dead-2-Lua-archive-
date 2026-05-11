@@ -1,0 +1,122 @@
+Its half now. Ill recreate it but wanna share this version. Ima developin my cheat "Invictus" rn so i cant write new luas. 
+But ill return to Aimware lua developing soon just use it. It has DC first 4 map i guess i used "Prop index finder lua"
+for findin idxes its so basic find any hittibles special index and read it. so u guys can upgreade this one or just wait my chit
+
+
+
+
+local ref = gui.Reference("Visuals", "Other")
+local box = gui.Groupbox(ref, "Object ESP", 325, 315, 300, 0)
+local enable = gui.Checkbox(box, "oesp.enable", "Enable", true)
+local max_dist = gui.Slider(box, "oesp.dist", "Max Distance", 1000, 1000, 100000)
+local font_sel = gui.Combobox(box, "oesp.font", "Font", "Falena", "Tahoma", "Arial", "Verdana", "Segoe UI", "Courier New")
+
+local col_araba    = gui.ColorPicker(box, "oesp.col.araba",    "Araba",      255, 150, 0,   255)
+local col_forklift = gui.ColorPicker(box, "oesp.col.forklift", "Forklift",   255, 255, 0,   255)
+local col_cop      = gui.ColorPicker(box, "oesp.col.cop",      "Cop Kutusu", 150, 150, 150, 255)
+
+local FONT_NAMES = { "Falena", "Tahoma", "Arial", "Verdana", "Segoe UI", "Courier New" }
+local fonts = {}
+for _, name in ipairs(FONT_NAMES) do
+    fonts[name] = draw.CreateFont(name, 13, 700)
+end
+
+local MODELS = {
+    [516] = "araba",
+    [517] = "araba",
+    [518] = "araba",
+    [519] = "araba",
+    [594] = "araba",
+    [595] = "araba",
+    [596] = "araba",
+    [597] = "araba",
+    [622] = "forklift",
+    [561] = "cop",
+}
+
+local LABELS = {
+    araba    = "ARABA",
+    forklift = "FORKLIFT",
+    cop      = "COP KUTUSU",
+}
+
+local function GetColor(kind)
+    if kind == "araba"    then return col_araba:GetValue() end
+    if kind == "forklift" then return col_forklift:GetValue() end
+    if kind == "cop"      then return col_cop:GetValue() end
+    return 255, 255, 255, 255
+end
+
+local function DrawOutlinedText(x, y, r, g, b, text)
+    draw.Color(0, 0, 0, 255)
+    for ox = -1, 1 do
+        for oy = -1, 1 do
+            if ox ~= 0 or oy ~= 0 then
+                draw.Text(x + ox, y + oy, text)
+            end
+        end
+    end
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+callbacks.Register("Draw", "object_esp", function()
+    if not enable:GetValue() then return end
+
+    local fname = FONT_NAMES[font_sel:GetValue() + 1] or "Falena"
+    local font = fonts[fname]
+    draw.SetFont(font)
+
+    local lp = entities.GetLocalPlayer()
+    local mypos = lp and lp:GetAbsOrigin()
+    local maxd = max_dist:GetValue()
+
+    local classes = { "CPhysicsProp", "CDynamicProp" }
+    local drawn = {}
+
+    for _, cls in ipairs(classes) do
+        local ents = entities.FindByClass(cls)
+        if ents then
+            for _, ent in pairs(ents) do
+                if not ent:IsDormant() then
+                    local ok, idx = pcall(function()
+                        return ent:GetPropInt("m_nModelIndex")
+                    end)
+                    if ok and idx and MODELS[idx] then
+                        local origin = ent:GetAbsOrigin()
+                        if origin then
+                            local key = string.format("%.0f%.0f%.0f", origin.x, origin.y, origin.z)
+                            if not drawn[key] then
+                                drawn[key] = true
+
+                                local dist = 0
+                                if mypos then
+                                    local dx = origin.x - mypos.x
+                                    local dy = origin.y - mypos.y
+                                    local dz = origin.z - mypos.z
+                                    dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+                                end
+
+                                local distm = math.floor(dist / 52)
+                                if distm > maxd / 52 then goto continue end
+
+                                local sx, sy = client.WorldToScreen(
+                                    Vector3(origin.x, origin.y, origin.z + 50))
+                                if sx then
+                                    local kind = MODELS[idx]
+                                    local r, g, b, _ = GetColor(kind)
+                                    local label = LABELS[kind]
+                                    local text = string.format("%s [%dm]", label, distm)
+                                    local tw, _ = draw.GetTextSize(text)
+                                    DrawOutlinedText(sx - tw/2, sy, r, g, b, text)
+                                end
+
+                                ::continue::
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
