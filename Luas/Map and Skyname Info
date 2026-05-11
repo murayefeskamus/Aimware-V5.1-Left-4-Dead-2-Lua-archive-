@@ -1,0 +1,49 @@
+-- Map & Skybox Info
+
+local font = draw.CreateFont("Tahoma", 14, 700)
+
+local last_check = 0
+local sky_name   = "unknown"
+local map_name   = "unknown"
+
+callbacks.Register("Draw", "sky_info", function()
+    local now = globals.RealTime()
+
+    if now - last_check > 2 then
+        local ok1, v1 = pcall(function() return client.GetConVar("sv_skyname") end)
+        local ok2, v2 = pcall(function() return client.GetConVar("host_map") end)
+
+        if ok1 and v1 then sky_name = v1 end
+        if ok2 and v2 then map_name = v2 end
+
+        last_check = now
+    end
+
+    local ang = engine.GetViewAngles()
+    if not ang or ang.x > -30 then return end
+
+    local sw, sh = draw.GetScreenSize()
+
+    draw.SetFont(font)
+
+    local txt1 = "Map: " .. map_name
+    local txt2 = "Sky: " .. sky_name
+
+    local tw1, _ = draw.GetTextSize(txt1)
+    local tw2, _ = draw.GetTextSize(txt2)
+
+    local cx = sw / 2
+
+    draw.Color(0, 0, 0, 180)
+    draw.Text(cx - tw1/2 + 1, sh/2 - 30 + 1, txt1)
+    draw.Text(cx - tw2/2 + 1, sh/2 - 10 + 1, txt2)
+
+    draw.Color(100, 200, 255, 220)
+    draw.Text(cx - tw1/2, sh/2 - 30, txt1)
+    draw.Color(150, 220, 255, 220)
+    draw.Text(cx - tw2/2, sh/2 - 10, txt2)
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("Draw", "sky_info")
+end)
