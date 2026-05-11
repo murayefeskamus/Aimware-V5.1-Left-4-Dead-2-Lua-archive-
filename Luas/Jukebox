@@ -1,0 +1,55 @@
+Idk...
+
+example map is: tumtara
+used lua: idx finder
+
+
+
+local font = draw.CreateFont("Tahoma", 13, 700)
+
+local JUKEBOX_IDX = 524
+
+local function DrawOutlinedText(x, y, r, g, b, text)
+    draw.SetFont(font)
+    draw.Color(0, 0, 0, 255)
+    draw.Text(x-1, y-1, text)
+    draw.Text(x+1, y-1, text)
+    draw.Text(x-1, y+1, text)
+    draw.Text(x+1, y+1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+callbacks.Register("Draw", "jukebox_esp", function()
+    local lp = entities.GetLocalPlayer()
+    local mypos = lp and lp:GetAbsOrigin()
+
+    local ents = entities.FindByClass("CDynamicProp")
+    if not ents then return end
+
+    for _, ent in pairs(ents) do
+        if not ent:IsDormant() then
+            local ok, idx = pcall(function()
+                return ent:GetPropInt("m_nModelIndex")
+            end)
+            if ok and idx == JUKEBOX_IDX then
+                local origin = ent:GetAbsOrigin()
+                if origin then
+                    local sx, sy = client.WorldToScreen(
+                        Vector3(origin.x, origin.y, origin.z + 40))
+                    if sx then
+                        local dist = 0
+                        if mypos then
+                            local dx = origin.x - mypos.x
+                            local dy = origin.y - mypos.y
+                            local dz = origin.z - mypos.z
+                            dist = math.floor(math.sqrt(dx*dx + dy*dy + dz*dz))
+                        end
+                        DrawOutlinedText(sx, sy, 255, 0, 255, 
+                            string.format("JUKEBOX [%dm]", math.floor(dist/52)))
+                    end
+                end
+            end
+        end
+    end
+end)
