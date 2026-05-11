@@ -1,0 +1,52 @@
+basic esp
+
+
+
+--temp hp esp
+
+local DECAY_RATE = 0.27
+local FONT = draw.CreateFont("Tahoma", 13, 600)
+
+local function GetTempHealth(ent)
+    if not ent then return 0 end
+
+    local buffer = ent:GetPropFloat("m_healthBuffer") or 0
+    local bufferTime = ent:GetPropFloat("m_healthBufferTime") or 0
+
+    if buffer <= 0 then
+        return 0
+    end
+
+    local curtime = globals.CurTime()
+    local temp = buffer - ((curtime - bufferTime) * DECAY_RATE)
+
+    if temp < 0 then temp = 0 end
+    return math.floor(temp + 0.5)
+end
+
+callbacks.Register("Draw", function()
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players then return end
+
+    local x, y = 20, 70
+    local line_h = 16
+
+    draw.SetFont(FONT)
+
+    for i = 1, #players do
+        local ent = players[i]
+
+        if ent:IsAlive() then
+            local tempHP = GetTempHealth(ent)
+
+            if tempHP > 0 then
+                local name = ent:GetName() or "Player"
+
+                draw.Color(0, 200, 0, 255)
+                draw.Text(x, y, name .. "  +" .. tempHP)
+
+                y = y + line_h
+            end
+        end
+    end
+end)
