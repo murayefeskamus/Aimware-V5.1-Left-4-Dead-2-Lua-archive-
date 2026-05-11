@@ -1,0 +1,68 @@
+
+
+local ref = gui.Reference("Visuals", "Other")
+local gb  = gui.Groupbox(ref, "Melee Cooldown", 325, 315, 300, 0)
+
+local enable   = gui.Checkbox(gb, "mcd.enable", "Enable Melee Cooldown", true)
+local bar_col  = gui.ColorPicker(gb, "mcd.col", "Bar Rengi", 255, 200, 0, 255)
+
+local font = draw.CreateFont("Tahoma", 12, 600)
+
+local MELEE_COOLDOWN = 0.5 -- saniye (yaklaşık)
+local last_swing_time = 0
+local was_swinging    = false
+
+callbacks.Register("Draw", "melee_cd", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then return end
+
+    local wep = lp:GetPropEntity("m_hActiveWeapon")
+    if not wep then return end
+
+    local cls = wep:GetClass()
+    if cls ~= "CTerrorMeleeWeapon" and cls ~= "CChainsaw" then return end
+
+    local swinging = wep:GetPropInt("m_bInMeleeSwing") == 1
+    local now      = globals.RealTime()
+
+    if swinging and not was_swinging then
+        last_swing_time = now
+    end
+    was_swinging = swinging
+
+    local elapsed = now - last_swing_time
+    local ratio   = math.min(elapsed / MELEE_COOLDOWN, 1.0)
+
+    local sw, sh = draw.GetScreenSize()
+    local barW   = 200
+    local barH   = 8
+    local barX   = sw/2 - barW/2
+    local barY   = sh/2 + 40
+
+    draw.Color(0, 0, 0, 180)
+    draw.FilledRect(barX, barY, barX + barW, barY + barH)
+
+    local r, g, b, _ = bar_col:GetValue()
+    if ratio < 1.0 then
+        -- Dolmadı — kırmızıdan renge geçiş
+        local tr = math.floor(255 * (1 - ratio))
+        local tg = math.floor(255 * ratio)
+        draw.Color(tr, tg, 0, 220)
+    else
+        draw.Color(r, g, b, 220)
+    end
+    draw.FilledRect(barX, barY, barX + math.floor(barW * ratio), barY + barH)
+
+    draw.Color(0, 0, 0, 200)
+    draw.OutlinedRect(barX, barY, barX + barW, barY + barH)
+
+    draw.SetFont(font)
+    local label = ratio >= 1.0 and "READY" or string.format("%.1fs", MELEE_COOLDOWN - elapsed)
+    local tw, _ = draw.GetTextSize(label)
+    draw.Color(0, 0, 0, 180)
+    draw.Text(sw/2 - tw/2 + 1, barY - 15 + 1, label)
+    draw.Color(ratio >= 1.0 and 100 or 255, ratio >= 1.0 and 255 or 200, 100, 255)
+    draw.Text(sw/2 - tw/2, barY - 15, label)
+end)
