@@ -1,0 +1,133 @@
+printin chat
+
+
+
+client.AllowListener("player_incapacitated")
+client.AllowListener("player_death")
+client.AllowListener("player_hurt")
+client.AllowListener("round_end")
+client.AllowListener("pills_used")
+
+
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if cm_sig == nil then
+    print("[Stats] ClientMode sig bulunamadi")
+    return
+end
+
+local function GetCHudChat()
+    local ok, result = pcall(function()
+        local global_addr = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+        if global_addr == 0 then return nil end
+        local clientmode = ffi.cast("uintptr_t*", global_addr)[0]
+        if clientmode == 0 then return nil end
+        local chudchat = ffi.cast("uintptr_t*", clientmode + 0x18)[0]
+        if chudchat == 0 then return nil end
+        return chudchat
+    end)
+    if not ok or result == nil then return nil end
+    return result
+end
+
+local function ChatPrintf(idx, msg)
+    local chudchat = GetCHudChat()
+    if chudchat == nil then return end
+    local ok, err = pcall(function()
+        local vtable  = ffi.cast("uintptr_t**", chudchat)[0]
+        if vtable == nil then return end
+        local fn_addr = vtable[23]
+        if fn_addr == 0 then return end
+        local fn = ffi.cast("void(__stdcall*)(void*, int, int, const char*)", fn_addr)
+        fn(ffi.cast("void*", chudchat), idx, 0, msg)
+    end)
+    if not ok then print("[Stats] Hata: " .. tostring(err)) end
+end
+
+local stats = {
+    downed     = 0,
+    pills_used = 0,
+    ff_given   = 0,
+    damage     = 0,
+    si_killed  = 0,
+}
+
+local function IsSI(ent)
+    if not ent then return false end
+    return ent:GetTeamNumber() == 3
+end
+
+local function ResetStats()
+    stats.downed     = 0
+    stats.pills_used = 0
+    stats.ff_given   = 0
+    stats.damage     = 0
+    stats.si_killed  = 0
+end
+
+local function PrintStats()
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local idx = lp:GetIndex()
+
+    local aw = "\x03Aim\x01Ware"
+
+    ChatPrintf(idx, string.format("%s \x04━━━━ Round Stats ━━━━", aw))
+    ChatPrintf(idx, string.format("%s\x01: Downed     \x05%d",     aw, stats.downed))
+    ChatPrintf(idx, string.format("%s\x01: Pills Used \x05%d",     aw, stats.pills_used))
+    ChatPrintf(idx, string.format("%s\x01: FF Given   \x05%d dmg", aw, stats.ff_given))
+    ChatPrintf(idx, string.format("%s\x01: Damage     \x05%d",     aw, stats.damage))
+    ChatPrintf(idx, string.format("%s\x01: SI Killed  \x05%d",     aw, stats.si_killed))
+    ChatPrintf(idx, string.format("%s \x04━━━━━━━━━━━━━━━━━━━━━", aw))
+end
+
+
+callbacks.Register("FireGameEvent", "stats_event", function(event)
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local lp_idx = lp:GetIndex()
+
+    local ename = event:GetName()
+
+    if ename == "player_incapacitated" then
+        local idx = client.GetPlayerIndexByUserID(event:GetInt("userid"))
+        if idx == lp_idx then
+            stats.downed = stats.downed + 1
+        end
+
+    elseif ename == "pills_used" then
+        local idx = client.GetPlayerIndexByUserID(event:GetInt("userid"))
+        if idx == lp_idx then
+            stats.pills_used = stats.pills_used + 1
+        end
+
+    elseif ename == "player_hurt" then
+        local attacker_idx = client.GetPlayerIndexByUserID(event:GetInt("attacker"))
+        local victim_idx   = client.GetPlayerIndexByUserID(event:GetInt("userid"))
+
+        if attacker_idx == lp_idx and attacker_idx ~= victim_idx then
+            local victim_ent = entities.GetByIndex(victim_idx)
+            local dmg        = event:GetInt("dmg_health")
+
+            if victim_ent and victim_ent:GetTeamNumber() == lp:GetTeamNumber() then
+                stats.ff_given = stats.ff_given + dmg
+            else
+                stats.damage = stats.damage + dmg
+            end
+        end
+
+    elseif ename == "player_death" then
+        local attacker_idx = client.GetPlayerIndexByUserID(event:GetInt("attacker"))
+        local victim_idx   = client.GetPlayerIndexByUserID(event:GetInt("userid"))
+
+        if attacker_idx == lp_idx then
+            local victim_ent = entities.GetByIndex(victim_idx)
+            if IsSI(victim_ent) then
+                stats.si_killed = stats.si_killed + 1
+            end
+        end
+
+    elseif ename == "round_end" then
+        PrintStats()
+        ResetStats()
+    end
+end)
