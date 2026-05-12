@@ -1,0 +1,58 @@
+local ref    = gui.Reference("Visuals", "World")
+local gb     = gui.Groupbox(ref, "Ghost Overlay", 320, 350, 220, 0)
+
+local enable = gui.Checkbox(gb, "ghostoverlay.enable", "Enable", true)
+local col    = gui.ColorPicker(gb, "ghostoverlay.col", "Color", 180, 255, 255, 255)
+
+local font = draw.CreateFont("Dixplay Regular", 12, 700)
+
+callbacks.Register("Draw", "ghost_overlay", function()
+
+    if not enable:GetValue() then
+        return
+    end
+
+    local r, g, b, a = col:GetValue()
+
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+
+    draw.SetFont(font)
+
+    for _, ent in pairs(players) do
+
+        if not ent:IsAlive() then
+            goto continue
+        end
+
+        if ent:GetTeamNumber() ~= 3 then
+            goto continue
+        end
+
+        local isGhost = ent:GetPropBool("m_isGhost")
+
+        if not isGhost then
+            goto continue
+        end
+
+        local pos = ent:GetAbsOrigin()
+        pos.z = pos.z + 85
+
+        local sx, sy = client.WorldToScreen(pos)
+
+        if not sx or not sy then
+            goto continue
+        end
+
+        local txt = "Ghost"
+
+        local tw, th = draw.GetTextSize(txt)
+
+        draw.Color(0, 0, 0, 220)
+        draw.Text(sx - tw / 2 + 1, sy + 1, txt)
+
+        draw.Color(r, g, b, a)
+        draw.Text(sx - tw / 2, sy, txt)
+
+        ::continue::
+    end
+end)
