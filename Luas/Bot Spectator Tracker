@@ -1,0 +1,206 @@
+
+local ref = gui.Reference("Visuals", "Other")
+local gb  = gui.Groupbox(ref, "Bot Spectator ESP", 325, 315, 300, 0)
+
+local enable      = gui.Checkbox(gb, "botspec.enable",   "Enable Bot Spec ESP",   true)
+local show_esp    = gui.Checkbox(gb, "botspec.esp",      "World ESP",             true)
+local show_hud    = gui.Checkbox(gb, "botspec.hud",      "HUD List",              true)
+local show_enemy  = gui.Checkbox(gb, "botspec.enemy",    "Show Enemy Spectators", true)
+local spec_col    = gui.ColorPicker(gb, "botspec.scol",  "Spectator Color", 255, 200,  0,  255)
+local enemy_col   = gui.ColorPicker(gb, "botspec.ecol",  "Enemy Color",     255,  80, 80,  255)
+local bot_col     = gui.ColorPicker(gb, "botspec.bcol",  "Bot Color",       100, 200, 255, 255)
+
+local font     = draw.CreateFont("Tahoma", 12, 700)
+local font_hud = draw.CreateFont("Tahoma", 13, 700)
+
+local function DrawOutlinedText(x, y, text, r, g, b, fnt)
+    draw.SetFont(fnt or font)
+    draw.Color(0, 0, 0, 200)
+    draw.Text(x-1, y,   text)
+    draw.Text(x+1, y,   text)
+    draw.Text(x,   y-1, text)
+    draw.Text(x,   y+1, text)
+    draw.Color(r, g, b, 255)
+    draw.Text(x, y, text)
+end
+
+callbacks.Register("Draw", "bot_spec_esp", function()
+    if not enable:GetValue() then return end
+
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    local myTeam = lp:GetTeamNumber()
+    local sw, sh = draw.GetScreenSize()
+
+    local hud_entries = {}
+
+    local bots = entities.FindByClass("SurvivorBot") or {}
+
+    for _, bot in pairs(bots) do
+        if bot:IsDormant() then goto continue end
+
+        local ok1, specUserID = pcall(function()
+            return bot:GetPropInt("m_humanSpectatorUserID")
+        end)
+        local ok2, specEntIdx = pcall(function()
+            return bot:GetPropInt("m_humanSpectatorEntIndex")
+        end)
+
+        local isWatched = ok1 and specUserID and specUserID > 0
+
+        local botpos = bot:GetAbsOrigin()
+        if not botpos then goto continue end
+
+        local botName = bot:GetName() or "SurvivorBot"
+        local sx, sy  = client.WorldToScreen(botpos + Vector3(0, 0, 80))
+
+        local specEnt = nil
+        local specName = nil
+        local specTeam = 0
+        local isEnemy  = false
+
+        if isWatched and ok2 and specEntIdx and specEntIdx > 0 then
+            specEnt  = entities.GetByIndex(specEntIdx)
+            if specEnt then
+                specName = specEnt:GetName() or ("UserID:" .. specUserID)
+                specTeam = specEnt:GetTeamNumber()
+                isEnemy  = (specTeam ~= myTeam)
+            end
+        end
+
+        if isEnemy and not show_enemy:GetValue() then goto continue end
+
+        local r, g, b, a
+        if isEnemy then
+            r, g, b, a = enemy_col:GetValue()
+        elseif isWatched then
+            r, g, b, a = spec_col:GetValue()
+        else
+            r, g, b, a = bot_col:GetValue()
+        end
+
+        if show_esp:GetValue() and sx and sy then
+            local offset = 0
+
+            local btw, _ = draw.GetTextSize(botName)
+            DrawOutlinedText(sx - btw/2, sy - offset, botName, r, g, b)
+            offset = offset + 15
+
+            if isWatched and specName then
+                local icon = isEnemy and "👁 DUSMAN: " or "👁 İZLİYOR: "
+                local stxt = icon .. specName
+                local stw, _ = draw.GetTextSize(stxt)
+
+                local blink = math.floor(globals.RealTime() * 4) % 2 == 0
+                if blink then
+                    draw.Color(r, g, b, math.floor(a * 0.3))
+                    draw.FilledRect(sx - stw/2 - 4, sy - offset - 2,
+                                   sx + stw/2 + 4, sy - offset + 14)
+                end
+
+                DrawOutlinedText(sx - stw/2, sy - offset, stxt, r, g, b)
+                offset = offset + 15
+
+                if specEnt then
+                    local specpos = specEnt:GetAbsOrigin()
+                    if specpos then
+                        local spx, spy = client.WorldToScreen(specpos + Vector3(0, 0, 70))
+                        if spx and spy and sx and sy then
+                            draw.Color(0, 0, 0, 80)
+                            draw.Line(spx+1, spy+1, sx+1, sy+1)
+                            draw.Color(r, g, b, math.floor(a * 0.6))
+                            draw.Line(spx, spy, sx, sy)
+
+                            draw.Color(r, g, b, a)
+                            draw.FilledCircle(spx, spy, 4)
+                            draw.Color(255, 255, 255, 200)
+                            draw.OutlinedCircle(spx, spy, 4)
+                        end
+                    end
+                end
+            else
+                local txt = "[ BOT ]"
+                local tw, _ = draw.GetTextSize(txt)
+                DrawOutlinedText(sx - tw/2, sy - offset, txt, r, g, b)
+            end
+        end
+
+        if show_hud:GetValue() then
+            table.insert(hud_entries, {
+                botName  = botName,
+                specName = specName,
+                isEnemy  = isEnemy,
+                isWatched= isWatched,
+                r = r, g = g, b = b,
+            })
+        end
+
+        ::continue::
+    end
+
+    if show_hud:GetValue() and #hud_entries > 0 then
+        local pad  = 8
+        local lh   = 16
+        local w    = 240
+        local h    = pad * 2 + 18 + #hud_entries * lh
+        local hx   = sw - w - 10
+        local hy   = 100
+
+        draw.Color(0, 0, 0, 150)
+        draw.FilledRect(hx, hy, hx + w, hy + h)
+        draw.Color(255, 200, 0, 150)
+        draw.OutlinedRect(hx, hy, hx + w, hy + h)
+
+        draw.SetFont(font_hud)
+        draw.Color(255, 200, 0, 255)
+        draw.Text(hx + pad, hy + pad, "BOT SPECTATORS")
+
+        draw.Color(255, 200, 0, 60)
+        draw.Line(hx, hy + pad + 16, hx + w, hy + pad + 16)
+
+        for i, entry in ipairs(hud_entries) do
+            local ly  = hy + pad + 18 + (i-1) * lh
+            local txt
+
+            if entry.isWatched and entry.specName then
+                local prefix = entry.isEnemy and "[!] " or "[👁] "
+                txt = prefix .. entry.botName .. " ← " .. entry.specName
+            else
+                txt = "[ ] " .. entry.botName .. " (izlenmiyor)"
+            end
+
+            draw.Color(entry.r, entry.g, entry.b, 230)
+            draw.SetFont(font)
+            draw.Text(hx + pad, ly, txt)
+        end
+    end
+
+    if show_enemy:GetValue() then
+        local watching_me = false
+        for _, entry in ipairs(hud_entries) do
+            if entry.isEnemy and entry.isWatched then
+                watching_me = true
+                break
+            end
+        end
+
+        if watching_me then
+            local blink = math.floor(globals.RealTime() * 4) % 2 == 0
+            if blink then
+                local wr, wg, wb, _ = enemy_col:GetValue()
+                local txt = "⚠ DUSMAN BOT'U İZLİYOR"
+                draw.SetFont(font_hud)
+                local tw, _ = draw.GetTextSize(txt)
+
+                draw.Color(0, 0, 0, 180)
+                draw.FilledRect(sw/2 - tw/2 - 8, sh * 0.12,
+                                sw/2 + tw/2 + 8, sh * 0.12 + 28)
+                draw.Color(wr, wg, wb, 200)
+                draw.OutlinedRect(sw/2 - tw/2 - 8, sh * 0.12,
+                                  sw/2 + tw/2 + 8, sh * 0.12 + 28)
+                draw.Color(wr, wg, wb, 255)
+                draw.Text(sw/2 - tw/2, sh * 0.12 + 4, txt)
+            end
+        end
+    end
+end)
