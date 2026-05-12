@@ -1,0 +1,30 @@
+Its not real anti callvote kick bcuz there s no anti kick in l4d2 its just hide ur name from ui but 
+people still can reach u with status and id so there s no escape lol but its n1 for pub lobbies
+
+
+
+local ref = gui.Reference("MISC", "GENERAL", "Main")
+local cb_setinfo = gui.Checkbox(ref, "lua_setinfo_name", "LJWFJWŞFRFDGW", false)
+
+local old_name = client.GetConVar("name")
+local last_state = false
+
+callbacks.Register("Draw", "L4D2_Setinfo_Name", function()
+    local current_state = cb_setinfo:GetValue()
+
+    if current_state ~= last_state then
+        if current_state then
+            old_name = client.GetConVar("name")
+            
+
+            client.Command("setinfo name \"  \"", false)
+            print("done")
+        else
+            if old_name and old_name ~= "" then
+              client.Command("setinfo name \"" .. old_name .. "\"", true)
+                print("21234: " .. old_name)
+            end
+        end
+        last_state = current_state
+    end
+end)
