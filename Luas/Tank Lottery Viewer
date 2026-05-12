@@ -1,0 +1,68 @@
+see who s tank early for pubbers
+
+
+
+
+local ref    = gui.Reference("Visuals", "World")
+local gb     = gui.Groupbox(ref, "Tank Lottery", 320, 600, 220, 0)
+local enable = gui.Checkbox(gb, "lottery.enable", "Enable", true)
+local font   = draw.CreateFont("Tahoma", 13, 700)
+
+callbacks.Register("Draw", "lottery_draw", function()
+    if not enable:GetValue() then return end
+
+    local prs = entities.FindByClass("CTerrorPlayerResource") or {}
+    local pr  = prs[1]
+    if not pr then return end
+
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+    local data    = {}
+    local highest = -1
+
+    for _, e in pairs(players) do
+        if not e:IsAlive() then goto continue end
+        if e:GetTeamNumber() ~= 3 then goto continue end
+
+        local ok1, ratio = pcall(function()
+            return pr:GetPropFloat("m_tankLotterySelectionRatio", idx)
+        end)
+        if not ok1 or not ratio or ratio <= 0 then goto continue end
+
+        if ratio > highest then highest = ratio end
+        table.insert(data, {ent = e, ratio = ratio})
+
+        ::continue::
+    end
+
+    if #data == 0 then return end
+
+    local sw, sh = draw.GetScreenSize()
+    local y = sh * 0.4
+
+    table.sort(data, function(a, b) return a.ratio > b.ratio end)
+
+    draw.SetFont(font)
+    for _, d in ipairs(data) do
+        local name  = d.ent:GetName() or "?"
+        local ratio = d.ratio
+        local isNext = math.abs(ratio - highest) < 0.0001
+
+        local r, g, b
+        if ratio >= 0.7 then
+            r, g, b = 255, 50, 50
+        elseif ratio >= 0.4 then
+            r, g, b = 255, 165, 0
+        else
+            r, g, b = 50, 255, 50
+        end
+
+        local txt = string.format("%s  %.1f%%%s", name, ratio * 100, isNext and "   NEXT" or "")
+
+        draw.Color(0, 0, 0, 200)
+        draw.Text(sw - 261, y + 1, txt)
+        draw.Color(r, g, b, 255)
+        draw.Text(sw - 262, y, txt)
+
+        y = y + 20
+    end
+end)
