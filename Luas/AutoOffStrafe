@@ -1,0 +1,25 @@
+disable strafe in infected for better movement
+
+
+
+
+
+local last_team = -1
+
+callbacks.Register("Draw", "auto_strafe_team", function()
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+
+    local team = me:GetTeamNumber()
+
+    if team == last_team then
+        return
+    end
+
+    last_team = team
+
+    if team == 3 then
+        gui.SetValue("misc.strafe.enable", false)
+        print("[Auto] Infected -> strafe OFF")
+    end
+end)
