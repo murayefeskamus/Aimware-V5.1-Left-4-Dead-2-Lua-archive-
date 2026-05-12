@@ -1,0 +1,104 @@
+local font     = draw.CreateFont("Tahoma", 13, 700)
+local ref      = gui.Reference("Visuals", "World")
+local gb       = gui.Groupbox(ref, "Spectator ESP", 16, 600, 220, 0)
+local enable   = gui.Checkbox(gb, "spec.enable", "Enable", true)
+local col      = gui.ColorPicker(gb, "spec.col", "Renk", 200, 150, 255, 255)
+
+local spec_cache = {}
+local last_scan  = 0
+
+local function ScanSpecs()
+    local now = globals.RealTime()
+    if now - last_scan < 0.2 then return end
+    last_scan = now
+
+    spec_cache = {}
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+    for _, e in pairs(players) do
+        local ok, mode = pcall(function() return e:GetPropInt("m_iObserverMode") end)
+        if ok and mode and mode > 0 then
+            table.insert(spec_cache, e)
+        end
+    end
+end
+
+callbacks.Register("Draw", "spec_esp", function()
+    if not enable:GetValue() then return end
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+    local r, g, b, a = col:GetValue()
+    local sw, sh     = draw.GetScreenSize()
+    local myidx      = me:GetIndex()
+
+    ScanSpecs()
+
+    local watching_me = {}
+    local free_cam    = {}
+
+    for _, e in ipairs(spec_cache) do
+        if e:GetIndex() == myidx then goto continue end
+
+        local ok1, mode = pcall(function() return e:GetPropInt("m_iObserverMode") end)
+        if not ok1 or not mode or mode == 0 then goto continue end
+
+        local ok2, tgt = pcall(function() return e:GetPropInt("m_hObserverTarget") end)
+        local name = e:GetName() or "?"
+
+        if ok2 and tgt and tgt > 0 then
+            local tgtEnt = entities.GetByIndex(tgt % 2048)
+            if tgtEnt and tgtEnt:GetIndex() == myidx then
+                table.insert(watching_me, name)
+            elseif tgtEnt then
+                local ok3, tpos = pcall(function() return tgtEnt:GetAbsOrigin() end)
+                if ok3 and tpos then
+                    local sx, sy = client.WorldToScreen(tpos + Vector3(0, 0, 100))
+                    if sx and sy then
+                        local tname = tgtEnt:GetName() or "?"
+                        local txt = string.format("[SPEC] %s → %s", name, tname)
+                        draw.SetFont(font)
+                        local tw, _ = draw.GetTextSize(txt)
+                        draw.Color(0, 0, 0, 200)
+                        draw.Text(sx - tw/2 + 1, sy + 1, txt)
+                        draw.Color(r, g, b, a)
+                        draw.Text(sx - tw/2, sy, txt)
+                    end
+                end
+            end
+        else
+            local ok3, pos = pcall(function() return e:GetAbsOrigin() end)
+            if ok3 and pos then
+                table.insert(free_cam, {name=name, pos=pos})
+            end
+        end
+
+        ::continue::
+    end
+
+    if #watching_me > 0 then
+        local y = 20
+        draw.SetFont(font)
+        for _, n in ipairs(watching_me) do
+            local txt = "👁 " .. n .. " seni izliyor"
+            local tw, _ = draw.GetTextSize(txt)
+            draw.Color(0, 0, 0, 200)
+            draw.Text(sw - tw - 9, y + 1, txt)
+            draw.Color(255, 80, 80, 255)
+            draw.Text(sw - tw - 10, y, txt)
+            y = y + 18
+        end
+    end
+
+    for _, fc in ipairs(free_cam) do
+        local sx, sy = client.WorldToScreen(fc.pos)
+        if sx and sy then
+            local txt = string.format("[SPEC] %s (Son Konum)", fc.name)
+            draw.SetFont(font)
+            local tw, _ = draw.GetTextSize(txt)
+            draw.Color(0, 0, 0, 200)
+            draw.Text(sx - tw/2 + 1, sy + 1, txt)
+            draw.Color(r, g, b, a)
+            draw.Text(sx - tw/2, sy, txt)
+            draw.FilledCircle(sx, sy, 4)
+        end
+    end
+end)
