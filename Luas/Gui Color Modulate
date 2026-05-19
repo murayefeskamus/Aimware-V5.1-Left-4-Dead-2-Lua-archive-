@@ -1,0 +1,169 @@
+
+should add a new Unload before using. it wont work anymore i guess since somethin changed on gayme
+
+
+local ref          = gui.Reference("Misc", "General", "Extra")
+local con_enable   = gui.Checkbox(ref,    "con.enable", "Console Color",  false)
+local con_color    = gui.ColorPicker(ref, "con.color",  "Color",          180, 80, 255, 255)
+
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+        void* GetProcAddress(void* hModule, const char* lpProcName);
+    ]]
+end)
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local mat_system = GetInterface("materialsystem.dll", "VMaterialSystem080")
+if mat_system == nil then print("[Con] MatSys bulunamadi") return end
+
+print(string.format("[Con] MatSys: 0x%X", tonumber(ffi.cast("uintptr_t", mat_system))))
+
+
+local first_mat = ffi.cast(
+    "uint16_t(__thiscall*)(void*)",
+    ffi.cast("uintptr_t**", mat_system)[0][72]
+)
+local next_mat = ffi.cast(
+    "uint16_t(__thiscall*)(void*, uint16_t)",
+    ffi.cast("uintptr_t**", mat_system)[0][73]
+)
+local invalid_mat = ffi.cast(
+    "uint16_t(__thiscall*)(void*)",
+    ffi.cast("uintptr_t**", mat_system)[0][74]
+)
+local get_mat = ffi.cast(
+    "void*(__thiscall*)(void*, uint16_t)",
+    ffi.cast("uintptr_t**", mat_system)[0][75]
+)
+
+local TARGETS = {
+    "vgui_white",
+    "800corner1",
+    "800corner2",
+    "800corner3",
+    "800corner4",
+}
+
+local s_mats      = {}
+local s_found     = false
+local s_frame_delay = 0
+
+local function GetMatName(mat)
+    local ok, name = pcall(function()
+        local vt = ffi.cast("uintptr_t**", mat)[0]
+        local fn = ffi.cast("const char*(__thiscall*)(void*)", vt[0])
+        local raw = fn(mat)
+        if raw == nil then return nil end
+        return ffi.string(raw)
+    end)
+    if not ok then return nil end
+    return name
+end
+
+local function ColorModulate(mat, r, g, b)
+    pcall(function()
+        local vt = ffi.cast("uintptr_t**", mat)[0]
+        local fn = ffi.cast("void(__thiscall*)(void*, float, float, float)", vt[28])
+        fn(mat, r, g, b)
+    end)
+end
+
+local function AlphaModulate(mat, a)
+    pcall(function()
+        local vt = ffi.cast("uintptr_t**", mat)[0]
+        local fn = ffi.cast("void(__thiscall*)(void*, float)", vt[27])
+        fn(mat, a)
+    end)
+end
+
+local function FindMaterials()
+    local ok_iter = pcall(function()
+        local h       = first_mat(mat_system)
+        local invalid = invalid_mat(mat_system)
+        local count   = 0
+
+        while h ~= invalid do
+            local ok_get, mat = pcall(get_mat, mat_system, h)
+            if ok_get and mat ~= nil and ffi.cast("uintptr_t", mat) ~= 0 then
+                local name = GetMatName(mat)
+                if name then
+                    for i, target in ipairs(TARGETS) do
+                        if not s_mats[i] and name:find(target, 1, true) then
+                            s_mats[i] = mat
+                            print("[Con] Bulundu: " .. name)
+                        end
+                    end
+                end
+            end
+
+            local all_found = true
+            for i = 1, #TARGETS do
+                if not s_mats[i] then all_found = false break end
+            end
+            if all_found then
+                s_found = true
+                print("[Con] Tum materyaller bulundu!")
+                break
+            end
+
+            count = count + 1
+            if count > 10000 then break end
+
+            local ok_next, next_h = pcall(next_mat, mat_system, h)
+            if not ok_next then break end
+            h = next_h
+        end
+    end)
+end
+
+local function ResetColors()
+    for _, mat in ipairs(s_mats) do
+        if mat then
+            ColorModulate(mat, 1.0, 1.0, 1.0)
+            AlphaModulate(mat, 1.0)
+        end
+    end
+end
+
+callbacks.Register("Draw", "console_color_draw", function()
+    if s_frame_delay < 300 then
+        s_frame_delay = s_frame_delay + 1
+        return
+    end
+
+    if not s_found then
+        FindMaterials()
+        return
+    end
+
+    if not con_enable:GetValue() then
+        ResetColors()
+        return
+    end
+
+    local r, g, b = con_color:GetValue()
+    local rf, gf, bf = r/255.0, g/255.0, b/255.0
+
+    for _, mat in ipairs(s_mats) do
+        if mat then
+            ColorModulate(mat, rf, gf, bf)
+            AlphaModulate(mat, 1.0)
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    ResetColors()
+    s_mats        = {}
+    s_found       = false
+    s_frame_delay = 0
+end)
