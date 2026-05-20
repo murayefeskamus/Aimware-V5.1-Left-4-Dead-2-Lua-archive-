@@ -1,87 +1,66 @@
-idk if it works in 26
+local ref = gui.Reference("Misc", "General", "Extra")
+local r_grav_enable = gui.Checkbox(ref, "misc.ragdoll.grav_enable", "Custom Ragdoll Gravity", false)
+local r_grav_value  = gui.Slider(ref, "misc.ragdoll.grav_val", "Gravity Value", 600, -200, 1000)
 
-
-local ref        = gui.Reference("Misc", "General", "Extra")
-local rag_enable = gui.Checkbox(ref, "rag.enable", "Custom Ragdoll Gravity", false)
-local rag_value  = gui.Slider(ref, "rag.value", "Gravity Value", 600, -1000, 1000)
-
-pcall(function()
-    ffi.cdef[[
-        void* GetModuleHandleA(const char* lpModuleName);
-        void* GetProcAddress(void* hModule, const char* lpProcName);
-    ]]
-end)
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
 
 local FCVAR_CHEAT = 16384
 
 local function GetInterface(dll, name)
     local module = ffi.C.GetModuleHandleA(dll)
-    if not module then return nil end
-    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)",
-        ffi.C.GetProcAddress(module, "CreateInterface"))
-    if not ci then return nil end
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
     return ci(name, nil)
 end
 
 local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
-if not icvar then print("[Ragdoll] ICvar null") return end
+if not icvar then return end
 
-local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)",
-    ffi.cast("uintptr_t**", icvar)[0][13])
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
 
-local function FindConVar(name)
-    local ok, ptr = pcall(function() return find_var_fn(icvar, name) end)
-    if not ok or not ptr then return nil end
-    if ffi.cast("uintptr_t", ptr) == 0 then return nil end
-    return ptr
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetFloat  = ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", ptr)[0][13]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
 end
 
-local function RemoveCheatFlag(cv)
-    if not cv then return end
-    local fn = ffi.cast("void(__thiscall*)(void*, int)",
-        ffi.cast("uintptr_t**", cv)[0][4])
-    pcall(fn, cv, FCVAR_CHEAT)
-end
+local cv_r_grav = SetupConVar("cl_ragdoll_gravity")
+if cv_r_grav then cv_r_grav.RemoveFlags(cv_r_grav.ptr, FCVAR_CHEAT) end
 
-local function SetConVarInt(cv, val)
-    if not cv then return end
-    local fn = ffi.cast("void(__thiscall*)(void*, float)",
-        ffi.cast("uintptr_t**", cv)[0][13])
-    pcall(fn, cv, val)
-end
+local last_state = false
+local last_value = -1
 
-local cv_rag = FindConVar("cl_ragdoll_gravity")
-if cv_rag then
-    RemoveCheatFlag(cv_rag)
-    print("[Ragdoll] cvar found, flag sokudu")
-else
-    print("[Ragdoll] cvar null")
-    return
-end
+callbacks.Register("CreateMove", "ragdoll_gravity_logic", function(cmd)
+    local enabled = r_grav_enable:GetValue()
+    
+    if not enabled and not last_state then return end
 
-local is_dead_state = false
-
-callbacks.Register("CreateMove", "ragdoll_logic", function(cmd)
-    if not rag_enable:GetValue() then return end
-    local lp = entities.GetLocalPlayer()
-    if not lp then return end
-
-    if not lp:IsAlive() then
-        if not is_dead_state then
-            SetConVarInt(cv_rag, rag_value:GetValue())
-            is_dead_state = true
+    if enabled then
+        local val = r_grav_value:GetValue()
+        if enabled ~= last_state or val ~= last_value then
+            if cv_r_grav then cv_r_grav.SetFloat(cv_r_grav.ptr, val) end
+            last_state = enabled
+            last_value = val
         end
     else
-        if is_dead_state then
-            SetConVarInt(cv_rag, 600)
-            is_dead_state = false
+        if enabled ~= last_state then
+            if cv_r_grav then cv_r_grav.SetFloat(cv_r_grav.ptr, 600.0) end 
+            last_state = enabled
+            last_value = 600.0
         end
     end
 end)
 
 callbacks.Register("Unload", function()
-    SetConVarInt(cv_rag, 600)
-    is_dead_state = false
+    if cv_r_grav then cv_r_grav.SetFloat(cv_r_grav.ptr, 600.0) end
 end)
-
-print("ragdollgravity")
