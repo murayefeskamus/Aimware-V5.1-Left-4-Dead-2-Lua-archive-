@@ -1,0 +1,137 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+local fog_enable  = gui.Checkbox(ref, "misc.fog.enable", "Advanced Fog Controller", false)
+local fog_nofog   = gui.Checkbox(ref, "misc.fog.nofog", "Disable All Fog (No Fog)", false)
+
+local fog_start   = gui.Slider(ref, "misc.fog.start", "Fog Start Distance", 100, 0, 5000)
+local fog_end     = gui.Slider(ref, "misc.fog.end", "Fog End Distance", 2000, 0, 8000)
+local fog_density = gui.Slider(ref, "misc.fog.density", "Max Density", 0.8, 0.0, 1.0, 0.05)
+local fog_hdr     = gui.Slider(ref, "misc.fog.hdr", "HDR Color Scale", 1.0, 0.0, 5.0, 0.1)
+
+local fog_color_p = gui.ColorPicker(fog_enable, "misc.fog.color_p", "Primary Fog Color", 100, 100, 150, 255)
+local fog_color_s = gui.ColorPicker(fog_enable, "misc.fog.color_s", "Secondary Fog Color", 50, 50, 100, 255)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local FCVAR_CHEAT = 16384
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if not icvar then return end
+
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetString = ffi.cast("void(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", ptr)[0][12]),
+        SetFloat  = ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", ptr)[0][13]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
+end
+
+local cv_override   = SetupConVar("fog_override")
+local cv_start      = SetupConVar("fog_start")
+local cv_end        = SetupConVar("fog_end")
+local cv_maxdensity = SetupConVar("fog_maxdensity")
+local cv_hdrscale   = SetupConVar("fog_hdrcolorscale")
+local cv_color1     = SetupConVar("fog_color")
+local cv_color2     = SetupConVar("fog_color2")
+local cv_blend      = SetupConVar("fog_blend")
+
+local convars = {cv_override, cv_start, cv_end, cv_maxdensity, cv_hdrscale, cv_color1, cv_color2, cv_blend}
+for i = 1, #convars do
+    if convars[i] then convars[i].RemoveFlags(convars[i].ptr, FCVAR_CHEAT) end
+end
+
+local last_enable   = false
+local last_nofog    = false
+local last_start    = -1
+local last_end      = -1
+local last_density  = -1
+local last_hdr      = -1
+local last_p_str    = ""
+local last_s_str    = ""
+
+callbacks.Register("CreateMove", "adv_fog_logic", function(cmd)
+    local enabled = fog_enable:GetValue()
+    local no_fog  = fog_nofog:GetValue()
+
+    if not enabled and not last_enable and not no_fog and not last_nofog then return end
+
+    if no_fog then
+        if no_fog ~= last_nofog then
+            if cv_override then cv_override.SetFloat(cv_override.ptr, 1.0) end
+            if cv_maxdensity then cv_maxdensity.SetFloat(cv_maxdensity.ptr, 0.0) end -- Yoğunluğu sıfırlayarak sisi yok eder
+            last_nofog = no_fog
+            last_enable = enabled
+        end
+        return
+    end
+
+    if enabled then
+        local val_start   = fog_start:GetValue()
+        local val_end     = fog_end:GetValue()
+        local val_density = fog_density:GetValue()
+        local val_hdr     = fog_hdr:GetValue()
+        
+        local pr, pg, pb  = fog_color_p:GetValue()
+        local sr, sg, sb  = fog_color_s:GetValue()
+        
+        local str_p = string.format("%d %d %d", pr, pg, pb)
+        local str_s = string.format("%d %d %d", sr, sg, sb)
+
+        if enabled ~= last_enable or no_fog ~= last_nofog or val_start ~= last_start or 
+           val_end ~= last_end or val_density ~= last_density or val_hdr ~= last_hdr or 
+           str_p ~= last_p_str or str_s ~= last_s_str then
+            
+            if cv_override   then cv_override.SetFloat(cv_override.ptr, 1.0) end
+            if cv_blend      then cv_blend.SetFloat(cv_blend.ptr, 1.0) end -- Çift renk geçişini aç
+            if cv_start      then cv_start.SetFloat(cv_start.ptr, val_start) end
+            if cv_end        then cv_end.SetFloat(cv_end.ptr, val_end) end
+            if cv_maxdensity then cv_maxdensity.SetFloat(cv_maxdensity.ptr, val_density) end
+            if cv_hdrscale   then cv_hdrscale.SetFloat(cv_hdrscale.ptr, val_hdr) end
+            if cv_color1     then cv_color1.SetString(cv_color1.ptr, str_p) end
+            if cv_color2     then cv_color2.SetString(cv_color2.ptr, str_s) end
+
+            last_enable  = enabled
+            last_nofog   = no_fog
+            last_start   = val_start
+            last_end     = val_end
+            last_density = val_density
+            last_hdr     = val_hdr
+            last_p_str   = str_p
+            last_s_str   = str_s
+        end
+    else
+        if enabled ~= last_enable or no_fog ~= last_nofog then
+            if cv_override   then cv_override.SetFloat(cv_override.ptr, 0.0) end
+            if cv_maxdensity then cv_maxdensity.SetFloat(cv_maxdensity.ptr, 1.0) end
+            if cv_color1     then cv_color1.SetString(cv_color1.ptr, "-1 -1 -1") end
+            if cv_color2     then cv_color2.SetString(cv_color2.ptr, "-1 -1 -1") end
+            
+            last_enable = enabled
+            last_nofog  = no_fog
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    if cv_override   then cv_override.SetFloat(cv_override.ptr, 0.0) end
+    if cv_maxdensity then cv_maxdensity.SetFloat(cv_maxdensity.ptr, 1.0) end
+    if cv_color1     then cv_color1.SetString(cv_color1.ptr, "-1 -1 -1") end
+    if cv_color2     then cv_color2.SetString(cv_color2.ptr, "-1 -1 -1") end
+end)
