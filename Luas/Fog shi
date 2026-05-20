@@ -1,0 +1,75 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+local fog_enable = gui.Checkbox(ref, "misc.fog.enable", "Custom Fog Color", false)
+local fog_color  = gui.ColorPicker(fog_enable, "misc.fog.color", "Fog Color", 255, 255, 255, 255)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local FCVAR_CHEAT = 16384
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if not icvar then return end
+
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetString = ffi.cast("void(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", ptr)[0][12]),
+        SetFloat  = ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", ptr)[0][13]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
+end
+
+local cv_fog = SetupConVar("fog_color")
+local cv_ovr = SetupConVar("fog_override")
+
+if cv_fog then cv_fog.RemoveFlags(cv_fog.ptr, FCVAR_CHEAT) end
+if cv_ovr then cv_ovr.RemoveFlags(cv_ovr.ptr, FCVAR_CHEAT) end
+
+local last_state = false
+local last_str = ""
+
+callbacks.Register("CreateMove", "fog_color_logic", function(cmd)
+    local enabled = fog_enable:GetValue()
+    
+    if not enabled and not last_state then return end
+
+    if enabled then
+        local r, g, b = fog_color:GetValue()
+        local current_str = string.format("%d %d %d", r, g, b)
+
+        if enabled ~= last_state or current_str ~= last_str then
+            if cv_ovr then cv_ovr.SetFloat(cv_ovr.ptr, 1.0) end
+            if cv_fog then cv_fog.SetString(cv_fog.ptr, current_str) end
+            last_state = enabled
+            last_str = current_str
+        end
+    else
+        if enabled ~= last_state then
+            if cv_ovr then cv_ovr.SetFloat(cv_ovr.ptr, 0.0) end -- Orijinal harita ayarlarına geri dön
+            if cv_fog then cv_fog.SetString(cv_fog.ptr, "-1 -1 -1") end
+            last_state = enabled
+            last_str = "-1 -1 -1"
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    if cv_ovr then cv_ovr.SetFloat(cv_ovr.ptr, 0.0) end
+    if cv_fog then cv_fog.SetString(cv_fog.ptr, "-1 -1 -1") end
+end)
