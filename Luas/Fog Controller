@@ -1,5 +1,5 @@
 local ref = gui.Reference("Misc", "General", "Extra")
-local fog_enable  = gui.Checkbox(ref, "misc.fog.enable", "Advanced Fog Controller", false)
+local fog_enable  = gui.Checkbox(ref, "misc.fog.enable", "Fog Controller", false)
 local fog_nofog   = gui.Checkbox(ref, "misc.fog.nofog", "Disable All Fog (No Fog)", false)
 
 local fog_start   = gui.Slider(ref, "misc.fog.start", "Fog Start Distance", 100, 0, 5000)
@@ -75,7 +75,7 @@ callbacks.Register("CreateMove", "adv_fog_logic", function(cmd)
     if no_fog then
         if no_fog ~= last_nofog then
             if cv_override then cv_override.SetFloat(cv_override.ptr, 1.0) end
-            if cv_maxdensity then cv_maxdensity.SetFloat(cv_maxdensity.ptr, 0.0) end -- Yoğunluğu sıfırlayarak sisi yok eder
+            if cv_maxdensity then cv_maxdensity.SetFloat(cv_maxdensity.ptr, 0.0) end 
             last_nofog = no_fog
             last_enable = enabled
         end
@@ -99,7 +99,7 @@ callbacks.Register("CreateMove", "adv_fog_logic", function(cmd)
            str_p ~= last_p_str or str_s ~= last_s_str then
             
             if cv_override   then cv_override.SetFloat(cv_override.ptr, 1.0) end
-            if cv_blend      then cv_blend.SetFloat(cv_blend.ptr, 1.0) end -- Çift renk geçişini aç
+            if cv_blend      then cv_blend.SetFloat(cv_blend.ptr, 1.0) end 
             if cv_start      then cv_start.SetFloat(cv_start.ptr, val_start) end
             if cv_end        then cv_end.SetFloat(cv_end.ptr, val_end) end
             if cv_maxdensity then cv_maxdensity.SetFloat(cv_maxdensity.ptr, val_density) end
