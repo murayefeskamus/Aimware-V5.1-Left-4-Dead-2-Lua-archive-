@@ -1,5 +1,5 @@
 local ref = gui.Reference("Misc", "General", "Extra")
-local r_grav_enable = gui.Checkbox(ref, "misc.ragdoll.grav_enable", "Custom Ragdoll Gravity", false)
+local r_grav_enable = gui.Checkbox(ref, "misc.ragdoll.grav_enable", "Ragdoll Gravity", false)
 local r_grav_value  = gui.Slider(ref, "misc.ragdoll.grav_val", "Gravity Value", 600, -200, 1000)
 
 ffi.cdef[[
