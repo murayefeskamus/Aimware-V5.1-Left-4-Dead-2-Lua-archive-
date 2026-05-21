@@ -1,0 +1,68 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+local kill_color_systems = gui.Checkbox(ref, "misc.visuals.kill_color_systems", "No Color Corrections", false)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local FCVAR_CHEAT = 16384
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if not icvar then return end
+
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetFloat  = ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", ptr)[0][13]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
+end
+
+local cv_cc             = SetupConVar("mat_colorcorrection")
+local cv_cc_entities    = SetupConVar("mat_colcorrection_disableentities")
+local cv_cc_clientside  = SetupConVar("mat_colcorrection_forceentitiesclientside")
+
+local cvars = {cv_cc, cv_cc_entities, cv_cc_clientside}
+for i = 1, #cvars do
+    if cvars[i] then cvars[i].RemoveFlags(cvars[i].ptr, FCVAR_CHEAT) end
+end
+
+local last_state = false
+
+callbacks.Register("CreateMove", "mega_color_kill_logic", function(cmd)
+    local enabled = kill_color_systems:GetValue()
+    
+    if enabled == last_state then return end
+    last_state = enabled
+
+    if enabled then
+        if cv_cc            then cv_cc.SetFloat(cv_cc.ptr, 0.0) end
+        if cv_cc_entities   then cv_cc_entities.SetFloat(cv_cc_entities.ptr, 1.0) end
+        if cv_cc_clientside then cv_cc_clientside.SetFloat(cv_cc_clientside.ptr, 0.0) end
+    else
+        if cv_cc            then cv_cc.SetFloat(cv_cc.ptr, 1.0) end
+        if cv_cc_entities   then cv_cc_entities.SetFloat(cv_cc_entities.ptr, 0.0) end
+        if cv_cc_clientside then cv_cc_clientside.SetFloat(cv_cc_clientside.ptr, 1.0) end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    if cv_cc            then cv_cc.SetFloat(cv_cc.ptr, 1.0) end
+    if cv_cc_entities   then cv_cc_entities.SetFloat(cv_cc_entities.ptr, 0.0) end
+    if cv_cc_clientside then cv_cc_clientside.SetFloat(cv_cc_clientside.ptr, 1.0) end
+end)
