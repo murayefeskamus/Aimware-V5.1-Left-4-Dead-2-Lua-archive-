@@ -1,0 +1,62 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+local zero_interp_enable = gui.Checkbox(ref, "misc.network.zero_interp", "No Interpolation", false)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local FCVAR_CHEAT = 16384
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if not icvar then return end
+
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetFloat  = ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", ptr)[0][13]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
+end
+
+local cv_interp = SetupConVar("cl_interp")
+local cv_ratio  = SetupConVar("cl_interp_ratio")
+
+if cv_interp then cv_interp.RemoveFlags(cv_interp.ptr, FCVAR_CHEAT) end
+if cv_ratio  then cv_ratio.RemoveFlags(cv_ratio.ptr, FCVAR_CHEAT) end
+
+local last_state = false
+
+callbacks.Register("CreateMove", "zero_interp_logic", function(cmd)
+    local enabled = zero_interp_enable:GetValue()
+    
+    if enabled == last_state then return end
+    last_state = enabled
+
+    if enabled then
+        if cv_interp then cv_interp.SetFloat(cv_interp.ptr, 0.0) end
+        if cv_ratio  then cv_ratio.SetFloat(cv_ratio.ptr, 0.0) end
+    else
+        if cv_interp then cv_interp.SetFloat(cv_interp.ptr, 0.1) end
+        if cv_ratio  then cv_ratio.SetFloat(cv_ratio.ptr, 2.0) end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    if cv_interp then cv_interp.SetFloat(cv_interp.ptr, 0.1) end
+    if cv_ratio  then cv_ratio.SetFloat(cv_ratio.ptr, 2.0) end
+end)
