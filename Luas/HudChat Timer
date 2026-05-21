@@ -1,0 +1,56 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+local chat_time_slider = gui.Slider(ref, "misc.visuals.chat_time", "Chat Text Display Time", 12, 0, 60)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local FCVAR_CHEAT = 16384
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if not icvar then return end
+
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetFloat  = ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", ptr)[0][13]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
+end
+
+local cv_chat_time = SetupConVar("hud_saytext_time")
+if cv_chat_time then cv_chat_time.RemoveFlags(cv_chat_time.ptr, FCVAR_CHEAT) end
+
+local last_value = -1.0
+
+callbacks.Register("CreateMove", "chat_time_logic", function(cmd)
+    local slider_val = chat_time_slider:GetValue()
+    local target_float = ffi.cast("float", slider_val)
+    
+    if target_float == last_value then return end
+    last_value = target_float
+
+    if cv_chat_time then 
+        cv_chat_time.SetFloat(cv_chat_time.ptr, target_float) 
+    end
+end)
+
+callbacks.Register("Unload", function()
+    -- Script kapatıldığında oyunun orijinal varsayılan süresine (12 saniye) geri çek
+    if cv_chat_time then cv_chat_time.SetFloat(cv_chat_time.ptr, 12.0) end
+end)
