@@ -1,0 +1,81 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local alternative_nobob = gui.Checkbox(ref, "misc.visuals.alt_nobob", "wont workthat shi use bottom", false)
+local hide_weapon       = gui.Checkbox(ref, "misc.visuals.hide_viewmodel", "Invisible Weapon aka nowep", false)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local FCVAR_CHEAT = 16384
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if not icvar then return end
+
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetFloat  = ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", ptr)[0][13]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
+end
+
+local cv_shift_l   = SetupConVar("cl_viewmodel_shift_left_amt")
+local cv_shift_r   = SetupConVar("cl_viewmodel_shift_right_amt")
+local cv_sway_scale = SetupConVar("cl_wpn_sway_scale")
+local cv_draw_vmodel = SetupConVar("r_drawviewmodel")
+
+local target_cvars = {cv_shift_l, cv_shift_r, cv_sway_scale, cv_draw_vmodel}
+for i = 1, #target_cvars do
+    if target_cvars[i] then target_cvars[i].RemoveFlags(target_cvars[i].ptr, FCVAR_CHEAT) end
+end
+
+local last_bob_state = false
+local last_hide_state = false
+
+callbacks.Register("CreateMove", "deep_sway_logic", function(cmd)
+    local bob_enabled = alternative_nobob:GetValue()
+    local hide_enabled = hide_weapon:GetValue()
+    
+    if bob_enabled ~= last_bob_state then
+        last_bob_state = bob_enabled
+        if bob_enabled then
+            if cv_shift_l    then cv_shift_l.SetFloat(cv_shift_l.ptr, 0.0) end
+            if cv_shift_r    then cv_shift_r.SetFloat(cv_shift_r.ptr, 0.0) end
+            if cv_sway_scale then cv_sway_scale.SetFloat(cv_sway_scale.ptr, 0.0) end
+        else
+            if cv_shift_l    then cv_shift_l.SetFloat(cv_shift_l.ptr, 0.5) end 
+            if cv_shift_r    then cv_shift_r.SetFloat(cv_shift_r.ptr, 0.25) end
+            if cv_sway_scale then cv_sway_scale.SetFloat(cv_sway_scale.ptr, 1.0) end
+        end
+    end
+
+    if hide_enabled ~= last_hide_state then
+        last_hide_state = hide_enabled
+        if cv_draw_vmodel then
+            cv_draw_vmodel.SetFloat(cv_draw_vmodel.ptr, hide_enabled and 0.0 or 1.0)
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    if cv_shift_l    then cv_shift_l.SetFloat(cv_shift_l.ptr, 0.5) end
+    if cv_shift_r    then cv_shift_r.SetFloat(cv_shift_r.ptr, 0.25) end
+    if cv_sway_scale then cv_sway_scale.SetFloat(cv_sway_scale.ptr, 1.0) end
+    if cv_draw_vmodel then cv_draw_vmodel.SetFloat(cv_draw_vmodel.ptr, 1.0) end
+end)
