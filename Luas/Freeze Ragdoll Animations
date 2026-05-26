@@ -1,8 +1,8 @@
-BESTEST OF THE BEST
+BESTEST OF THE BEST (second and true method btw) 
 
 
 local ref = gui.Reference("Visuals", "World", "Extra")
-local opt_freeze_physics = gui.Checkbox(ref, "ffi.cl_phys_timescale_mode", "Freeze Ragdoll Physics (Saf FFI)", false)
+local opt_freeze_physics = gui.Checkbox(ref, "ffi.cl_phys_timescale_mode", "Freeze Ragdoll Physics", false)
 
 ffi.cdef[[
     void* GetModuleHandleA(const char* lpModuleName);
