@@ -1,0 +1,38 @@
+credits to aika idk if it works cuz didnt try 
+
+
+
+ffi.cdef[[
+    typedef struct {
+        char pad[8];
+        int sequence_number; // NetChannel + 8 offseti
+    } NetChannel_t;
+]]
+
+local engine_base = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("engine.dll"))
+
+local function ExecuteSequenceShift(local_player_ptr)
+    if not local_player_ptr or local_player_ptr == 0 then return end
+
+    local ptr1 = ffi.cast("uintptr_t*", engine_base + 0x4276CC)[0] 
+    local netChannel = ffi.cast("uintptr_t*", ptr1 + 24)[0]
+
+    if netChannel == 0 then return end
+
+    local netChannelStruct = ffi.cast("NetChannel_t*", netChannel)
+    
+    local currentSeq = netChannelStruct.sequence_number
+    netChannelStruct.sequence_number = currentSeq + 90000 
+end
+
+callbacks.Register("CreateMove", "ffi_exploit_logic", function(cmd)
+    local local_player = entity.get_local_player()
+    if not local_player then return end
+    
+    local pAddr = ffi.cast("uintptr_t", local_player:get_address())
+    local tickbase = ffi.cast("float*", pAddr + 0x11FC)[0]
+    
+    if tickbase > 560.0 then
+        ExecuteSequenceShift(pAddr)
+    end
+end)
