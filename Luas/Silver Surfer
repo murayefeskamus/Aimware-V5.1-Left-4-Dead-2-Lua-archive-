@@ -1,0 +1,61 @@
+ve got "debug/env_cubemap_model" btw if u guys want chams u can use it i have it i guess lemme check it ill post it if i found true lua
+
+local ref = gui.Reference("Visuals", "World", "Extra")
+local opt_chrome_mode = gui.Checkbox(ref, "esp.engine.ffi_chrome", "silver Fucking Surfer", false)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local FCVAR_CHEAT = 16384
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+if not icvar then return end
+
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetFloat    = ffi.cast("void(__thiscall*)(void*, float)", ffi.cast("uintptr_t**", ptr)[0][13]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
+end
+
+local cv_chrome = SetupConVar("r_showenvcubemap")
+
+if cv_chrome then 
+    cv_chrome.RemoveFlags(cv_chrome.ptr, FCVAR_CHEAT) 
+end
+
+local last_state = -1
+
+callbacks.Register("CreateMove", "engine_chrome_logic", function(cmd)
+    if not cv_chrome then return end
+
+    local state = opt_chrome_mode:GetValue() and 1.0 or 0.0
+    
+    if state == last_state then return end
+    last_state = state
+
+    cv_chrome.SetFloat(cv_chrome.ptr, state)
+end)
+
+callbacks.Register("Unload", function()
+    if cv_chrome then 
+        cv_chrome.SetFloat(cv_chrome.ptr, 0.0) 
+    end
+end)
