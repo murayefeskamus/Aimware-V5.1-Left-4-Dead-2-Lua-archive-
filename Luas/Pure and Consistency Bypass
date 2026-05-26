@@ -1,0 +1,49 @@
+-- CANIN SAAAG OLSUUUUUN CANIN SAG OLSUN BEN CEKERİİM KADER SAAAG OLSUUUUUUUN KADER SAG OLSUN BEN GİDERİM
+local ref = gui.Reference("Misc", "General", "Extra")
+local opt_bypass = gui.Checkbox(ref, "ffi.consistency_bypass", "Bypass sv_consistency and sv_pure", false)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local FCVAR_CHEAT = 16384
+local FCVAR_PROTECTED = 2048 
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local icvar = GetInterface("vstdlib.dll", "VEngineCvar007")
+local find_var_fn = ffi.cast("void*(__thiscall*)(void*, const char*)", ffi.cast("uintptr_t**", icvar)[0][13])
+
+local function SetupConVar(name)
+    local ptr = find_var_fn(icvar, name)
+    if ptr == nil or ffi.cast("uintptr_t", ptr) == 0 then return nil end
+    
+    return {
+        ptr = ptr,
+        SetInt      = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][16]),
+        RemoveFlags = ffi.cast("void(__thiscall*)(void*, int)", ffi.cast("uintptr_t**", ptr)[0][4])
+    }
+end
+
+local cv_consistency = SetupConVar("sv_consistency")
+local cv_pure = SetupConVar("sv_pure")
+
+if cv_consistency then 
+    cv_consistency.RemoveFlags(cv_consistency.ptr, FCVAR_CHEAT + FCVAR_PROTECTED) 
+end
+if cv_pure then 
+    cv_pure.RemoveFlags(cv_pure.ptr, FCVAR_CHEAT + FCVAR_PROTECTED) 
+end
+
+callbacks.Register("CreateMove", "bypass_logic", function(cmd)
+    if not opt_bypass:GetValue() then return end
+  
+    if cv_consistency then cv_consistency.SetInt(cv_consistency.ptr, 0) end
+    if cv_pure then cv_pure.SetInt(cv_pure.ptr, 0) end
+end)
