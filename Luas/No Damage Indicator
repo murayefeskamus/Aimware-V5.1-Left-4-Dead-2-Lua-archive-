@@ -1,0 +1,117 @@
+my actual plan for damageindicator is colormodulate actually but we got additive flag vertexcolor  flag and etc so i have diff way for changing the color of
+damage indicator. But i will share this bcuz it disappears indicator and its pretty cool 
+
+
+
+--AJDQDJAD
+local ref       = gui.Reference("Misc", "General", "Extra")
+local di_enable = gui.Checkbox(ref, "di.enable", "Custom Color for vgui/damageindicator", false)
+local di_color  = gui.ColorPicker(ref, "di.color", "Color",      255, 0, 0, 255)
+
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+        void* GetProcAddress(void* hModule, const char* lpProcName);
+    ]]
+end)
+
+local function GetInterface(dll, name)
+    local module = ffi.C.GetModuleHandleA(dll)
+    if module == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(module, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local mat_system = GetInterface("materialsystem.dll", "VMaterialSystem080")
+if mat_system == nil then print("[DI] MatSys bulunamadi") return end
+
+print(string.format("[DI] MatSys: 0x%X", tonumber(ffi.cast("uintptr_t", mat_system))))
+
+local find_material = ffi.cast(
+    "void*(__thiscall*)(void*, const char*, const char*, bool, const char*)",
+    ffi.cast("uintptr_t**", mat_system)[0][71]
+)
+
+local pMat = nil
+local ok_find, res = pcall(find_material,
+    mat_system, "VGUI/damageindicator", "VGUI textures", true, nil)
+
+if ok_find and res ~= nil and ffi.cast("uintptr_t", res) ~= 0 then
+    pMat = res
+    print(string.format("[DI] Materyal bulundu: 0x%X", tonumber(ffi.cast("uintptr_t", pMat))))
+else
+    print("[DI] VGUI/damageindicator bulunamadi")
+    local alts = {
+        "vgui/damageindicator",
+        "vgui/white",
+        "damageindicator",
+        "HUD/damageindicator",
+    }
+    for _, name in ipairs(alts) do
+        local ok2, res2 = pcall(find_material,
+            mat_system, name, "VGUI textures", false, nil)
+        if ok2 and res2 ~= nil and ffi.cast("uintptr_t", res2) ~= 0 then
+            pMat = res2
+            print("[DI] Bulundu: " .. name)
+            break
+        end
+    end
+end
+
+if pMat == nil then
+    print("[DI] Materyal null")
+    return
+end
+
+local function ColorModulate(mat, r, g, b)
+    pcall(function()
+        local fn = ffi.cast(
+            "void(__thiscall*)(void*, float, float, float)",
+            ffi.cast("uintptr_t**", mat)[0][28]
+        )
+        fn(mat, r, g, b)
+    end)
+end
+
+local function AlphaModulate(mat, a)
+    pcall(function()
+        local fn = ffi.cast(
+            "void(__thiscall*)(void*, float)",
+            ffi.cast("uintptr_t**", mat)[0][27]
+        )
+        fn(mat, a)
+    end)
+end
+
+local function ResetColor()
+    ColorModulate(pMat, 1.0, 1.0, 1.0)
+    AlphaModulate(pMat, 1.0)
+end
+
+local last_enabled = false
+
+callbacks.Register("Draw", "di_draw", function()
+    local enabled = di_enable:GetValue()
+
+    if not enabled then
+        if last_enabled then
+            ResetColor()
+        end
+        last_enabled = false
+        return
+    end
+
+    last_enabled = true
+
+    local r, g, b = di_color:GetValue()
+    ColorModulate(pMat, r/255.0, g/255.0, b/255.0)
+    AlphaModulate(pMat, 1.0)
+end)
+
+callbacks.Register("Unload", function()
+    if pMat then ResetColor() end
+end)
+
+print("DamageIndicator Yuklendi!")
