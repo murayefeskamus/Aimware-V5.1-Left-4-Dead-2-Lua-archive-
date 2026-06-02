@@ -1,0 +1,104 @@
+AS I SAID I LIKE VISUAL SHITS 
+-- barpaintin reversed by murayefeskamus 
+
+local ref        = gui.Reference("Misc", "General", "Extra")
+local hp_enable  = gui.Checkbox(ref, "hp.enable", "Custom Healthbar Color", false)
+local hp_rgb     = gui.Checkbox(ref, "hp.rgb", "RGB Mode", false)
+local hp_color   = gui.ColorPicker(ref, "hp.color", "Stable Color", 0, 255, 255, 255)
+
+pcall(function()
+    ffi.cdef[[
+        void* VirtualAlloc(void* lpAddress, size_t dwSize, uint32_t flAllocationType, uint32_t flProtect);
+        int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+        void* memcpy(void* dest, const void* src, size_t n);
+    ]]
+end)
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local MEM_COMMIT             = 0x1000
+local MEM_RESERVE            = 0x2000
+local COPY_SIZE              = 7 
+
+local hp_paint_addr = mem.FindPattern(
+    "client.dll",
+    "55 8B EC 83 EC 18 56 8B F1 8B 86 B8 01 00 00 85 C0 0F 88 ?? ?? ?? ??"
+)
+
+if not hp_paint_addr then
+    print("[RGB-HUD] HealthPanel::Paint fonksiyonu bulunamadi!")
+    return
+end
+
+local function GetRainbowColor(speed)
+    local real_time = globals.RealTime() * (speed or 1.0)
+    local r = math.floor(math.sin(real_time) * 127 + 128)
+    local g = math.floor(math.sin(real_time + 2.0) * 127 + 128)
+    local b = math.floor(math.sin(real_time + 4.0) * 127 + 128)
+    return r, g, b, 255
+end
+
+local Paint_t = ffi.typeof("void(__fastcall*)(void*, void*)")
+local g_HP = { orig = nil, hook = nil }
+
+local function Hooked_Paint(thisptr, edx)
+    if g_HP.orig == nil then return end
+
+    if hp_enable:GetValue() then
+        local r, g, b, a
+        
+        if hp_rgb:GetValue() then
+            r, g, b, a = GetRainbowColor(2.5)
+        else
+            r, g, b, a = hp_color:GetValue()
+        end
+        
+        
+        ffi.cast("bool*", ffi.cast("uintptr_t", thisptr) + 383)[0] = false 
+        ffi.cast("bool*", ffi.cast("uintptr_t", thisptr) + 460)[0] = true  
+        
+        local color_int = bit.bor(r, bit.lshift(g, 8), bit.lshift(b, 16), bit.lshift(a, 24))
+        ffi.cast("int*", ffi.cast("uintptr_t", thisptr) + 457)[0] = color_int 
+    end
+
+
+    ffi.cast(Paint_t, g_HP.orig)(thisptr, edx)
+    
+end
+
+
+local tramp = ffi.C.VirtualAlloc(nil, 64, MEM_COMMIT + MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+if tramp ~= nil then
+    ffi.C.memcpy(tramp, ffi.cast("const void*", hp_paint_addr), COPY_SIZE)
+    
+    local jmp_pos  = ffi.cast("uint8_t*", tramp) + COPY_SIZE
+    local ret_addr = ffi.cast("uint8_t*", hp_paint_addr) + COPY_SIZE
+    jmp_pos[0] = 0x68
+    ffi.cast("uint32_t*", jmp_pos + 1)[0] = ffi.cast("uint32_t", ret_addr)
+    jmp_pos[5] = 0xC3
+    
+    g_HP.orig = tramp
+    g_HP.hook = ffi.cast(Paint_t, Hooked_Paint)
+    
+    local old_protect = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", hp_paint_addr), COPY_SIZE, PAGE_EXECUTE_READWRITE, old_protect)
+    
+    local ptr = ffi.cast("uint8_t*", hp_paint_addr)
+    for i = 0, COPY_SIZE - 1 do ptr[i] = 0x90 end
+    
+    ptr[0] = 0x68
+    ffi.cast("uint32_t*", ptr + 1)[0] = ffi.cast("uint32_t", ffi.cast("void*", g_HP.hook))
+    ptr[5] = 0xC3
+    
+    ffi.C.VirtualProtect(ffi.cast("void*", hp_paint_addr), COPY_SIZE, old_protect[0], old_protect)
+    print("[RGB-HUD] Yeni Dual Mod Can Bari Hook'u Basariyla Kuruldu!")
+end
+
+callbacks.Register("Unload", function()
+    if hp_paint_addr and g_HP.orig then
+        local old = ffi.new("uint32_t[1]")
+        ffi.C.VirtualProtect(ffi.cast("void*", hp_paint_addr), COPY_SIZE, PAGE_EXECUTE_READWRITE, old)
+        ffi.C.memcpy(ffi.cast("void*", hp_paint_addr), g_HP.orig, COPY_SIZE)
+        ffi.C.VirtualProtect(ffi.cast("void*", hp_paint_addr), COPY_SIZE, old[0], old)
+        print("[RGB-HUD] Hook guvenli sekilde kaldirildi.")
+    end
+end)
