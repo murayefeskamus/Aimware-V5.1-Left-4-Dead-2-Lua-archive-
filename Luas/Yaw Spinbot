@@ -1,0 +1,18 @@
+local spin_yaw = 0
+local spin_speed = 0 
+local IN_ATTACK = 1
+
+local function on_create_move(cmd)
+    if not cmd then return end
+    
+    if bit.band(cmd.buttons, IN_ATTACK) ~= 0 then 
+        return 
+    end
+    spin_yaw = spin_yaw + spin_speed
+    if spin_yaw > 180 then spin_yaw = spin_yaw - 360 end
+    if spin_yaw < -180 then spin_yaw = spin_yaw - 360 end
+    
+    cmd.viewangles = EulerAngles(-89.0, spin_yaw, 0.0)
+end
+
+callbacks.Register("CreateMove", on_create_move)
