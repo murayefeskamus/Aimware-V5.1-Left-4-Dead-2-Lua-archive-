@@ -1,0 +1,72 @@
+--cl_say hook
+
+local ref        = gui.Reference("Misc", "General", "Extra")
+local msg_enable = gui.Checkbox(ref, "msg.enable", "mesajtest", false)
+local msg_text   = gui.Editbox(ref, "msg.text", "mesaj")
+local msg_button = gui.Button(ref, "msg.send", "mesajgonder", function()
+end)
+
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+        void* GetProcAddress(void* hModule, const char* lpProcName);
+    ]]
+end)
+
+local clsay_addr = mem.FindPattern(
+    "engine.dll",
+    "55 8B EC 83 EC ?? 53 56 57 8B F9 8B 4D"
+)
+
+if not clsay_addr then
+    print("[Say] CL_Say null")
+    return
+end
+print(string.format("[Say] CL_Say: 0x%X", tonumber(ffi.cast("uintptr_t", clsay_addr))))
+
+local CL_Say_t = ffi.typeof("void(__thiscall*)(void*, const char*, bool)")
+local fn_say = ffi.cast(CL_Say_t, clsay_addr)
+
+local function SendMessage(text, team_only)
+    if text == nil or text == "" then return end
+    pcall(function()
+        fn_say(nil, text, team_only or false)
+    end)
+end
+
+local send_queued = false
+
+gui.Button(ref, "msg.send2", "Mesaj Gonder", function()
+    send_queued = true
+end)
+
+local last_send = 0
+local INTERVAL  = 30 
+
+callbacks.Register("Draw", "Say_Draw", function()
+    if send_queued then
+        send_queued = false
+        local text = msg_text:GetValue()
+        SendMessage(text, false)
+        print("[Say] Gonderildi: " .. tostring(text))
+    end
+    if msg_enable:GetValue() then
+        local now = globals.RealTime()
+        if now - last_send >= INTERVAL then
+            last_send = now
+            local text = msg_text:GetValue()
+            SendMessage(text, false)
+        end
+    end
+end)
+
+_G.L4D2_Say = function(text, team_only)
+    SendMessage(text, team_only)
+end
+
+callbacks.Register("Unload", "Say_Unload", function()
+    callbacks.Unregister("Draw", "Say_Draw")
+    _G.L4D2_Say = nil
+    print("[Say] Kaldirildi.")
+end)
+print("[Say] Yuklendi!")
