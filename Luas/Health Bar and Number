@@ -1,0 +1,244 @@
+local ref = gui.Reference("Visuals", "Overlay", "Local")
+local box = gui.Groupbox(ref, "Godlike Health Bar", 0, 0, 305, 0)
+
+local barWidth      = gui.Slider(box, "hpbar.barw", "Bar Genisligi", 4, 2, 12)
+local xPad          = gui.Slider(box, "hpbar.xpad", "Hizalama", 4, 0, 20)
+
+gui.Text(box, "--- SURVIVORS ---")
+local enable_surv       = gui.Checkbox(box, "hpbar.surv.enable", "Survivor Health Bar", true)
+
+gui.Text(box, "Bar Modu Secin:")
+local s_bar_static      = gui.Checkbox(box, "hpbar.surv.b_static", "Static", false)
+local s_bar_static_c    = gui.ColorPicker(s_bar_static, "hpbar.surv.b_static_c", "Renk", 0, 255, 0, 255)
+
+local s_bar_dynamic     = gui.Checkbox(box, "hpbar.surv.b_dynamic", "Default", true)
+
+local s_bar_gradient    = gui.Checkbox(box, "hpbar.surv.b_gradient", "Gradient", false)
+local s_bar_grad_c1     = gui.ColorPicker(s_bar_gradient, "hpbar.surv.b_grad_c1", "Upper", 0, 255, 150, 255)
+local s_bar_grad_c2     = gui.ColorPicker(s_bar_gradient, "hpbar.surv.b_grad_c2", "Bottom", 255, 0, 50, 255)
+
+local s_bar_rgb         = gui.Checkbox(box, "hpbar.surv.b_rgb", "RGB Mode", false)
+
+gui.Text(box, "Choose Number Mode:")
+local num_surv          = gui.Checkbox(box, "hpbar.surv.num.enable", "Survivor Health Number", true)
+
+local s_num_static      = gui.Checkbox(box, "hpbar.surv.n_static", "Static", false)
+local s_num_static_c    = gui.ColorPicker(s_num_static, "hpbar.surv.n_static_c", "Color", 255, 255, 255, 255)
+
+local s_num_dynamic     = gui.Checkbox(box, "hpbar.surv.n_dynamic", "Default", true)
+
+local s_num_gradient    = gui.Checkbox(box, "hpbar.surv.n_gradient", "Gradient", false)
+local s_num_grad_c1     = gui.ColorPicker(s_num_gradient, "hpbar.surv.n_grad_c1", "Color 1", 255, 255, 255, 255)
+local s_num_grad_c2     = gui.ColorPicker(s_num_gradient, "hpbar.surv.n_grad_c2", "Color 2", 255, 0, 0, 255)
+
+local s_num_rgb         = gui.Checkbox(box, "hpbar.surv.n_rgb", "RGB Mode", false)
+
+
+gui.Text(box, "--- INFECTED ---")
+local enable_inf        = gui.Checkbox(box, "hpbar.inf.enable", "Infected Health Bar", true)
+
+gui.Text(box, "Infected Health Bar:")
+local i_bar_static      = gui.Checkbox(box, "hpbar.inf.b_static", "Static", false)
+local i_bar_static_c    = gui.ColorPicker(i_bar_static, "hpbar.inf.b_static_c", "Color", 255, 0, 0, 255)
+
+local i_bar_dynamic     = gui.Checkbox(box, "hpbar.inf.b_dynamic", "Dynamic", true)
+
+local i_bar_gradient    = gui.Checkbox(box, "hpbar.inf.b_gradient", "Gradient", false)
+local i_bar_grad_c1     = gui.ColorPicker(i_bar_gradient, "hpbar.inf.b_grad_c1", "Upper", 0, 255, 150, 255)
+local i_bar_grad_c2     = gui.ColorPicker(i_bar_gradient, "hpbar.inf.b_grad_c2", "Bottom", 255, 0, 50, 255)
+
+local i_bar_rgb         = gui.Checkbox(box, "hpbar.inf.b_rgb", "RGB Mode", false)
+
+gui.Text(box, "Choose Number Mode:")
+local num_inf           = gui.Checkbox(box, "hpbar.inf.num.enable", "Infected Health Number", true)
+
+local i_num_static      = gui.Checkbox(box, "hpbar.inf.n_static", "Static", false)
+local i_num_static_c    = gui.ColorPicker(i_num_static, "hpbar.inf.n_static_c", "Color", 255, 255, 255, 255)
+
+local i_num_dynamic     = gui.Checkbox(box, "hpbar.inf.n_dynamic", "Default", true)
+
+local i_num_gradient    = gui.Checkbox(box, "hpbar.inf.n_gradient", "Gradient", false)
+local i_num_grad_c1     = gui.ColorPicker(i_num_gradient, "hpbar.inf.n_grad_c1", "Color 1", 255, 255, 255, 255)
+local i_num_grad_c2     = gui.ColorPicker(i_num_gradient, "hpbar.inf.n_grad_c2", "Color 2", 0, 255, 255, 255)
+
+local i_num_rgb         = gui.Checkbox(box, "hpbar.inf.n_rgb", "RGB Mode", false)
+
+
+
+local function GetRGBColor(speed)
+    local t = common.Time() * (speed or 2)
+    local r = math.floor(math.sin(t) * 127 + 128)
+    local g = math.floor(math.sin(t + 2) * 127 + 128)
+    local b = math.floor(math.sin(t + 4) * 127 + 128)
+    return r, g, b, 255
+end
+
+local function LerpColor(c1, c2, pct)
+    local r = math.floor(c1[1] + (c2[1] - c1[1]) * pct)
+    local g = math.floor(c1[2] + (c2[2] - c1[2]) * pct)
+    local b = math.floor(c1[3] + (c2[3] - c1[3]) * pct)
+    local a = math.floor(c1[4] + (c2[4] - c1[4]) * pct)
+    return r, g, b, a
+end
+
+local function GetDynamicBarColor(pct)
+    local r = math.floor(255 * (1 - pct))
+    local g = math.floor(255 * pct)
+    return r, g, 0, 255
+end
+
+local function GetBoxEdges(ent)
+    local mins   = ent:GetMins()
+    local maxs   = ent:GetMaxs()
+    local origin = ent:GetAbsOrigin()
+    if not mins or not maxs or not origin then return nil end
+
+    local ox, oy, oz = origin.x, origin.y, origin.z
+    local corners = {
+        {ox+mins.x, oy+mins.y, oz+mins.z}, {ox+mins.x, oy+maxs.y, oz+mins.z},
+        {ox+maxs.x, oy+mins.y, oz+mins.z}, {ox+maxs.x, oy+maxs.y, oz+mins.z},
+        {ox+mins.x, oy+mins.y, oz+maxs.z}, {ox+mins.x, oy+maxs.y, oz+maxs.z},
+        {ox+maxs.x, oy+mins.y, oz+maxs.z}, {ox+maxs.x, oy+maxs.y, oz+maxs.z},
+    }
+
+    local left, right, top, bottom
+    for _, c in ipairs(corners) do
+        local sx, sy = client.WorldToScreen(Vector3(c[1], c[2], c[3]))
+        if sx and sy then
+            left   = left   and math.min(left, sx)   or sx
+            right  = right  and math.max(right, sx)  or sx
+            top    = top    and math.min(top, sy)    or sy
+            bottom = bottom and math.max(bottom, sy) or sy
+        end
+    end
+    return left, right, top, bottom
+end
+
+callbacks.Register("Draw", "L4D2_Direct_HPBar", function()
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players or #players == 0 then return end
+
+    for _, ent in pairs(players) do
+        if ent:GetIndex() ~= me:GetIndex() and ent:IsAlive() and not ent:IsDormant() then
+            
+            local team = ent:GetTeamNumber()
+            local is_surv = (team == 2)
+            local is_inf  = (team == 3)
+
+            if is_surv and not enable_surv:GetValue() then goto continue end
+            if is_inf and not enable_inf:GetValue() then goto continue end
+
+            local chk_b_rgb  = is_surv and s_bar_rgb or i_bar_rgb
+            local chk_b_grad = is_surv and s_bar_gradient or i_bar_gradient
+            local chk_b_dyn  = is_surv and s_bar_dynamic or i_bar_dynamic
+            
+            local bar_static_color   = is_surv and s_bar_static_c or i_bar_static_c
+            local bar_gradient_color1 = is_surv and s_bar_grad_c1 or i_bar_grad_c1
+            local bar_gradient_color2 = is_surv and s_bar_grad_c2 or i_bar_grad_c2
+
+            local n_show     = is_surv and num_surv:GetValue() or num_inf:GetValue()
+            local chk_n_rgb  = is_surv and s_num_rgb or i_num_rgb
+            local chk_n_grad = is_surv and s_num_gradient or i_num_gradient
+            local chk_n_dyn  = is_surv and s_num_dynamic or i_num_dynamic
+            
+            local num_static_color   = is_surv and s_num_static_c or i_num_static_c
+            local num_gradient_color1 = is_surv and s_num_grad_c1 or i_num_grad_c1
+            local num_gradient_color2 = is_surv and s_num_grad_c2 or i_num_grad_c2
+
+            local health = ent:GetPropInt("m_iHealth") or 0
+            local max_health = ent:GetPropInt("m_iMaxHealth") or 100
+            if health <= 0 then goto continue end
+
+            local left, right, top, bottom = GetBoxEdges(ent)
+            if not left or not right or not top or not bottom then goto continue end
+
+            local sxBar = right + xPad:GetValue()
+            local syTop = top
+            local syBot = bottom
+            local bw    = barWidth:GetValue()
+            local totalHeight = syBot - syTop
+
+            local pct = math.max(0, math.min(1, health / max_health))
+            local healthBarHeight = totalHeight * pct
+            local emptyBarHeight = totalHeight - healthBarHeight
+
+
+            draw.Color(0, 0, 0, 200)
+            draw.FilledRect(sxBar, syTop, sxBar + bw, syBot)
+
+
+            if chk_b_rgb:GetValue() then
+                local br, bg, bb, ba = GetRGBColor(2)
+                draw.Color(br, bg, bb, ba)
+                draw.FilledRect(sxBar, syTop + emptyBarHeight, sxBar + bw, syBot)
+
+            elseif chk_b_grad:GetValue() then
+                local r1, g1, b1, a1 = bar_gradient_color1:GetValue()
+                local r2, g2, b2, a2 = bar_gradient_color2:GetValue()
+                
+                local startY = math.floor(syTop + emptyBarHeight)
+                local endY = math.floor(syBot)
+                
+                for y = startY, endY do
+                    local row_pct = (y - syTop) / totalHeight
+                    local br = math.floor(r1 + (r2 - r1) * row_pct)
+                    local bg = math.floor(g1 + (g2 - g1) * row_pct)
+                    local bb = math.floor(b1 + (b2 - b1) * row_pct)
+                    local ba = math.floor(a1 + (a2 - a1) * row_pct)
+                    
+                    draw.Color(br, bg, bb, ba)
+                    draw.FilledRect(sxBar, y, sxBar + bw, y + 1)
+                end
+
+            elseif chk_b_dyn:GetValue() then
+                local br, bg, bb, ba = GetDynamicBarColor(pct)
+                draw.Color(br, bg, bb, ba)
+                draw.FilledRect(sxBar, syTop + emptyBarHeight, sxBar + bw, syBot)
+
+            else
+                local br, bg, bb, ba = bar_static_color:GetValue()
+                draw.Color(br, bg, bb, ba)
+                draw.FilledRect(sxBar, syTop + emptyBarHeight, sxBar + bw, syBot)
+            end
+
+
+            draw.Color(0, 0, 0, 255)
+            draw.OutlinedRect(sxBar - 1, syTop - 1, sxBar + bw + 1, syBot + 1)
+
+   
+            if n_show then
+                local txt = tostring(health) 
+                local tx = sxBar + bw + 4
+                local ty = syTop + emptyBarHeight - 6
+
+                if ty < syTop then ty = syTop end
+                if ty > syBot - 12 then ty = syBot - 12 end
+
+                local nr, ng, nb, na = 255, 255, 255, 255
+
+                if chk_n_rgb:GetValue() then
+                    nr, ng, nb, na = GetRGBColor(2)
+                elseif chk_n_grad:GetValue() then
+                    local r1, g1, b1, a1 = num_gradient_color1:GetValue()
+                    local r2, g2, b2, a2 = num_gradient_color2:GetValue()
+                    nr, ng, nb, na = LerpColor({r1, g1, b1, a1}, {r2, g2, b2, a2}, pct)
+                elseif chk_n_dyn:GetValue() then
+                    nr, ng, nb, na = 255, 255, 255, 255 
+                else
+                    nr, ng, nb, na = num_static_color:GetValue() 
+                end
+
+                draw.Color(0, 0, 0, 255)
+                draw.Text(tx + 1, ty + 1, txt)
+                
+                draw.Color(nr, ng, nb, na)
+                draw.Text(tx, ty, txt)
+            end
+
+            ::continue::
+        end
+    end
+end)
