@@ -1,0 +1,80 @@
+local font_arial   = draw.CreateFont("Arial", 14, 700)
+local font_tahoma  = draw.CreateFont("Tahoma", 14, 700)
+local font_verdana = draw.CreateFont("Verdana", 14, 700)
+local font_impact  = draw.CreateFont("Impact", 16, 400)
+
+local ref = gui.Reference("Visuals", "Overlay", "Local")
+local box = gui.Groupbox(ref, "Name ESP", 0, 0, 305, 0)
+
+local enable_name   = gui.Checkbox(box, "standalone.name.enable", "Show Names", true)
+local name_color    = gui.ColorPicker(enable_name, "standalone.name.color", "Color", 255, 255, 255, 255)
+local name_font     = gui.Combobox(box, "standalone.name.font", "Fonts", "Arial", "Tahoma", "Verdana", "Impact")
+
+local function GetBoxEdges(ent)
+    local mins   = ent:GetMins()
+    local maxs   = ent:GetMaxs()
+    local origin = ent:GetAbsOrigin()
+    if not mins or not maxs or not origin then return nil end
+
+    local ox, oy, oz = origin.x, origin.y, origin.z
+    local corners = {
+        {ox+mins.x, oy+mins.y, oz+mins.z}, {ox+mins.x, oy+maxs.y, oz+mins.z},
+        {ox+maxs.x, oy+mins.y, oz+mins.z}, {ox+maxs.x, oy+maxs.y, oz+mins.z},
+        {ox+mins.x, oy+mins.y, oz+maxs.z}, {ox+mins.x, oy+maxs.y, oz+maxs.z},
+        {ox+maxs.x, oy+mins.y, oz+maxs.z}, {ox+maxs.x, oy+maxs.y, oz+maxs.z},
+    }
+
+    local left, right, top, bottom
+    for _, c in ipairs(corners) do
+        local sx, sy = client.WorldToScreen(Vector3(c[1], c[2], c[3]))
+        if sx and sy then
+            left   = left   and math.min(left, sx)   or sx
+            right  = right  and math.max(right, sx)  or sx
+            top    = top    and math.min(top, sy)    or sy
+            bottom = bottom and math.max(bottom, sy) or sy
+        end
+    end
+    return left, right, top, bottom
+end
+
+callbacks.Register("Draw", "L4D2_Standalone_NameESP", function()
+    if not enable_name:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players or #players == 0 then return end
+
+    for _, ent in pairs(players) do
+        if ent:GetIndex() ~= me:GetIndex() and ent:IsAlive() and not ent:IsDormant() then
+            
+            local left, right, top, bottom = GetBoxEdges(ent)
+            if not left or not right or not top or not bottom then goto continue end
+
+            local pInfo = client.GetPlayerInfo(ent:GetIndex())
+            local nameStr = pInfo and pInfo.Name or "Player"
+            
+            local fontSel = name_font:GetValue()
+            if fontSel == 0 then draw.SetFont(font_arial)
+            elseif fontSel == 1 then draw.SetFont(font_tahoma)
+            elseif fontSel == 2 then draw.SetFont(font_verdana)
+            elseif fontSel == 3 then draw.SetFont(font_impact)
+            end
+
+            local tw, th = draw.GetTextSize(nameStr)
+            local nameX = math.floor(((left + right) / 2) - (tw / 2))
+            local nameY = math.floor(top - th - 6) 
+
+            local nr, ng, nb, na = name_color:GetValue()
+
+            draw.Color(0, 0, 0, 255)
+            draw.Text(nameX + 1, nameY + 1, nameStr)
+            
+            draw.Color(nr, ng, nb, na)
+            draw.Text(nameX, nameY, nameStr)
+
+            ::continue::
+        end
+    end
+end)
