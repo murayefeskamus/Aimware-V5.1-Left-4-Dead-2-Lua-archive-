@@ -1,0 +1,93 @@
+idk lemme searh for whole paint but ill share it already bcuz i found no scope shit thats why
+
+
+
+
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+]]
+
+local ref        = gui.Reference("Misc", "General", "Extra")
+local sc_enable  = gui.Checkbox(ref, "sc.enable",  "Disable Scope Overlay (uncheck checkbox ROFL)",         true)
+local sc_color_e = gui.Checkbox(ref, "sc.colen",   "Paint", false)
+local sc_color   = gui.ColorPicker(ref, "sc.color", "Color",         255, 0, 0, 255)
+
+local client_module = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll"))
+if client_module == 0 then print("[Scope] client.dll none") return end
+print(string.format("[Scope] client.dll: 0x%X", tonumber(client_module)))
+
+
+local pSurface = ffi.cast("void***", client_module + 0x88B8F4)[0]
+if pSurface == nil or ffi.cast("uintptr_t", pSurface) == 0 then
+    print("[Scope] ISurface alinamadi!")
+    return
+end
+print(string.format("[Scope] ISurface: 0x%X", tonumber(ffi.cast("uintptr_t", pSurface))))
+
+local surf_vtbl = ffi.cast("void***", pSurface)[0]
+
+local SetColor_t = ffi.typeof("void*(__fastcall*)(void*, void*, int, int, int, int)")
+local PaintFn_t  = ffi.typeof("void*(__fastcall*)(void*, void*)")
+
+local GC = {
+    hk_setcolor = nil,
+    hk_paint    = nil,
+}
+
+local orig_setcolor_ptr = surf_vtbl[11]
+local orig_setcolor     = ffi.cast(SetColor_t, orig_setcolor_ptr)
+
+local scope_paint_entry = ffi.cast("void**", client_module + 0x5A39E4)
+local orig_paint        = ffi.cast(PaintFn_t, scope_paint_entry[0])
+
+print(string.format("[Scope] Paint orig: 0x%X", tonumber(ffi.cast("uintptr_t", orig_paint))))
+
+local in_scope_paint = false
+
+GC.hk_setcolor = ffi.cast(SetColor_t, function(this, dummy, r, g, b, a)
+    if in_scope_paint and sc_color_e:GetValue() then
+        local cr, cg, cb = sc_color:GetValue()
+        return orig_setcolor(this, nil, cr, cg, cb, a)
+    end
+    return orig_setcolor(this, nil, r, g, b, a)
+end)
+
+GC.hk_paint = ffi.cast(PaintFn_t, function(this, dummy)
+    if not sc_enable:GetValue() then
+        return nil  
+    end
+    in_scope_paint = true
+    local result = orig_paint(this, nil)
+    in_scope_paint = false
+    return result
+end)
+
+
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", surf_vtbl + 11 * 4), 4, 0x40, old)
+surf_vtbl[11] = ffi.cast("void*", GC.hk_setcolor)
+ffi.C.VirtualProtect(ffi.cast("void*", surf_vtbl + 11 * 4), 4, old[0], old)
+
+local old2 = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", scope_paint_entry), 4, 0x40, old2)
+scope_paint_entry[0] = ffi.cast("void*", GC.hk_paint)
+ffi.C.VirtualProtect(ffi.cast("void*", scope_paint_entry), 4, old2[0], old2)
+
+print("[Scope] DrawSetColor hook kuruldu (slot 11).")
+print("[Scope] Paint hook kuruldu (slot 128, RVA 0x5A39E4).")
+
+callbacks.Register("Unload", function()
+    local r1 = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", surf_vtbl + 11 * 4), 4, 0x40, r1)
+    surf_vtbl[11] = orig_setcolor_ptr
+    ffi.C.VirtualProtect(ffi.cast("void*", surf_vtbl + 11 * 4), 4, r1[0], r1)
+
+    local r2 = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", scope_paint_entry), 4, 0x40, r2)
+    scope_paint_entry[0] = ffi.cast("void*", orig_paint)
+    ffi.C.VirtualProtect(ffi.cast("void*", scope_paint_entry), 4, r2[0], r2)
+
+    print("[Scope] Hook'lar kaldirildi.")
+end)
