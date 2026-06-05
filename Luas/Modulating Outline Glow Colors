@@ -1,0 +1,126 @@
+not esp just colormodulate
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+]]
+
+local ref       = gui.Reference("Misc", "General", "Extra")
+local gl_enable = gui.Checkbox(ref, "gl.enable", "Glow Rengi Aktif",    false)
+local gl_color  = gui.ColorPicker(ref, "gl.color", "Glow Rengi",         0, 255, 0, 255)
+local gl_entity = gui.Checkbox(ref, "gl.entity", "Entity Bazlı (VMT)",  false)
+
+local client_module = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll"))
+if client_module == 0 then print("[Glow] client.dll none") return end
+print(string.format("[Glow] client.dll: 0x%X", tonumber(client_module)))
+
+local pMatSys = ffi.cast("void***", client_module + 0x88B7F0)[0]
+if pMatSys == nil or ffi.cast("uintptr_t", pMatSys) == 0 then
+    print("[Glow] pMatSys alinamadi!")
+    return
+end
+print(string.format("[Glow] pMatSys: 0x%X", tonumber(ffi.cast("uintptr_t", pMatSys))))
+
+
+local FindMat_t = ffi.typeof(
+    "void*(__fastcall*)(void*, void*, const char*, const char*, int, void*)"
+)
+local ColorMod_t = ffi.typeof(
+    "void(__fastcall*)(void*, void*, float, float, float)"
+)
+local GlowFn_t = ffi.typeof(
+    "void(__fastcall*)(void*, void*, float*, float*, float*, float*)"
+)
+
+local pGlowColor = nil
+
+local function GetGlowMaterial()
+    if pGlowColor ~= nil then return pGlowColor end
+    local vt = ffi.cast("void***", pMatSys)[0]
+    local ok, res = pcall(function()
+        return ffi.cast(FindMat_t, vt[71])(
+            pMatSys, nil, "dev/glow_color", "Other textures", 1, nil
+        )
+    end)
+    if ok and res ~= nil and ffi.cast("uintptr_t", res) > 0x10000 then
+        pGlowColor = res
+        print(string.format("[Glow] dev/glow_color: 0x%X", tonumber(ffi.cast("uintptr_t", pGlowColor))))
+    end
+    return pGlowColor
+end
+
+local function ColorModulate(pMat, r, g, b)
+    local vt = ffi.cast("void***", pMat)[0]
+    ffi.cast(ColorMod_t, vt[28])(pMat, nil, r, g, b)
+end
+
+
+local GLOW_ENTRY_RVA = 0x5B6850
+local glow_entry     = ffi.cast("uintptr_t*", client_module + GLOW_ENTRY_RVA)
+local orig_glow_addr = glow_entry[0]
+
+local tmp_r = ffi.new("float[1]")
+local tmp_g = ffi.new("float[1]")
+local tmp_b = ffi.new("float[1]")
+local tmp_a = ffi.new("float[1]")
+
+local GC = { hook_fn = nil }
+
+local function Hooked_GetGlowColor(pThis, edx, r, g, b, a)
+    ffi.cast(GlowFn_t, orig_glow_addr)(pThis, nil, tmp_r, tmp_g, tmp_b, tmp_a)
+
+    if gl_entity:GetValue() and gl_enable:GetValue() then
+        if tmp_a[0] > 0.0 then
+            local cr, cg, cb = gl_color:GetValue()
+            r[0] = cr / 255.0
+            g[0] = cg / 255.0
+            b[0] = cb / 255.0
+            a[0] = tmp_a[0]  
+        else
+            r[0] = 0.0
+            g[0] = 0.0
+            b[0] = 0.0
+            a[0] = 0.0
+        end
+    else
+        r[0] = tmp_r[0]
+        g[0] = tmp_g[0]
+        b[0] = tmp_b[0]
+        a[0] = tmp_a[0]
+    end
+end
+
+GC.hook_fn = ffi.cast(GlowFn_t, Hooked_GetGlowColor)
+
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", client_module + GLOW_ENTRY_RVA), 4, 0x40, old)
+glow_entry[0] = ffi.cast("uintptr_t", GC.hook_fn)
+ffi.C.VirtualProtect(ffi.cast("void*", client_module + GLOW_ENTRY_RVA), 4, old[0], old)
+
+print("[Glow] VMT hook kuruldu (slot 239).")
+
+callbacks.Register("Draw", "Glow_Draw", function()
+    if not gl_enable:GetValue() then return end
+    if gl_entity:GetValue() then return end  
+
+    local pMat = GetGlowMaterial()
+    if pMat == nil then return end
+
+    local r, g, b = gl_color:GetValue()
+    ColorModulate(pMat, r / 255.0, g / 255.0, b / 255.0)
+end)
+
+callbacks.Register("Unload", function()
+    local old2 = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", client_module + GLOW_ENTRY_RVA), 4, 0x40, old2)
+    glow_entry[0] = orig_glow_addr
+    ffi.C.VirtualProtect(ffi.cast("void*", client_module + GLOW_ENTRY_RVA), 4, old2[0], old2)
+
+    if pGlowColor ~= nil then
+        ColorModulate(pGlowColor, 1.0, 1.0, 1.0)
+    end
+
+    callbacks.Unregister("Draw", "Glow_Draw")
+    print("[Glow] Restore edildi.")
+end)
+
