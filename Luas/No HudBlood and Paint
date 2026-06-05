@@ -1,0 +1,82 @@
+--reversed hard tbh (not)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+]]
+
+local ref        = gui.Reference("Misc", "General", "Extra")
+local bl_enable  = gui.Checkbox(ref, "bl.enable",  "Chudblood Disabler (uncheck it again)",      true)
+local bl_recolor = gui.Checkbox(ref, "bl.recolor", "Change Color Types",    false)
+local bl_type    = gui.Combobox(ref, "bl.type",    "Types:",
+    "Normal",   
+    "Melee",    
+    "Blunt",    
+    "Mud"       
+)
+
+local client_module = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll"))
+if client_module == 0 then print("[Blood] client.dll none") return end
+print(string.format("[Blood] client.dll: 0x%X", tonumber(client_module)))
+
+
+local PaintFn_t = ffi.typeof("void(__fastcall*)(void*, void*)")
+
+local paint_entry = ffi.cast("void**", client_module + 0x5D13A4)
+local orig_paint  = ffi.cast(PaintFn_t, paint_entry[0])
+print(string.format("[Blood] Paint orig: 0x%X", tonumber(ffi.cast("uintptr_t", orig_paint))))
+
+local GC = { hk_paint = nil }
+
+GC.hk_paint = ffi.cast(PaintFn_t, function(this, dummy)
+    if not bl_enable:GetValue() then
+        local count_ptr = ffi.cast("int*", ffi.cast("uintptr_t", this) + 0x194)
+        local saved = count_ptr[0]
+        count_ptr[0] = 0
+        orig_paint(this, nil)
+        count_ptr[0] = saved
+        return
+    end
+
+    if bl_recolor:GetValue() then
+        local count_ptr = ffi.cast("int*", ffi.cast("uintptr_t", this) + 0x194)
+        local list_ptr  = ffi.cast("int*", ffi.cast("uintptr_t", this) + 0x188)
+        local count     = count_ptr[0]
+        local list_addr = list_ptr[0]
+
+        if count > 0 and list_addr > 0x10000 then
+            local list  = ffi.cast("int*", list_addr)
+            local saved = {}
+            local new_type = bl_type:GetValue()  -- 0-3
+
+            for i = 0, count - 1 do
+                saved[i] = list[i * 3]
+                list[i * 3] = new_type
+            end
+
+            orig_paint(this, nil)
+
+            for i = 0, count - 1 do
+                list[i * 3] = saved[i]
+            end
+            return
+        end
+    end
+
+    orig_paint(this, nil)
+end)
+
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", paint_entry), 4, 0x40, old)
+paint_entry[0] = ffi.cast("void*", GC.hk_paint)
+ffi.C.VirtualProtect(ffi.cast("void*", paint_entry), 4, old[0], old)
+
+print("[Blood] Paint hook kuruldu (slot 128).")
+
+callbacks.Register("Unload", function()
+    local old2 = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", paint_entry), 4, 0x40, old2)
+    paint_entry[0] = ffi.cast("void*", orig_paint)
+    ffi.C.VirtualProtect(ffi.cast("void*", paint_entry), 4, old2[0], old2)
+    print("[Blood] Restore edildi.")
+end)
