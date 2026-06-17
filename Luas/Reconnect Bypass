@@ -1,0 +1,211 @@
+-- Author: murayefeskamus
+
+ffi.cdef[[
+	int RegOpenKeyExA(void* hKey, const char* lpSubKey, unsigned long ulOptions, unsigned long samDesired, void** phkResult);
+	int RegQueryValueExA(void* hKey, const char* lpValueName, unsigned long* lpReserved, unsigned long* lpType, unsigned char* lpData, unsigned long* lpcbData);
+	int RegCloseKey(void* hKey);
+
+	void* ShellExecuteA(void* hwnd, const char* lpOperation, const char* lpFile, const char* lpParameters, const char* lpDirectory, int nShowCmd);
+
+	void* CreateFileA(const char* lpFileName, unsigned long dwDesiredAccess, unsigned long dwShareMode, void* lpSecurityAttributes, unsigned long dwCreationDisposition, unsigned long dwFlagsAndAttributes, void* hTemplateFile);
+	int CloseHandle(void* hObject);
+]]
+
+local SW_HIDE = 0x0
+local SW_SHOW = 0x5
+
+local ERROR_SUCCESS = 0
+
+local HKEY_CURRENT_USER 	= ffi.cast("void*", 0x80000001)
+local HKEY_STEAM_SUB_PATH 	= "Software\\Valve\\Steam"
+
+local KEY_QUERY_VALUE		= 0x0001
+
+local GENERIC_ALL 		= 0x10000000
+local CREATE_ALWAYS 		= 0x2
+local FILE_ATTRIBUTE_NORMAL	= 0x80
+local INVALID_HANDLE_VALUE 	= ffi.cast("void*", -0x1)
+
+local Advapi32 	= ffi.load("Advapi32")
+local Shell32 	= ffi.load("Shell32")
+local Kernel32 	= ffi.load("Kernel32")
+
+local cReconnectBypassStatus_Text_Active 	= "Status: Active"
+local cReconnectBypassStatus_Text_Disabled 	= "Status: Disabled"
+local cReconnectBypassStatus_Text_Unknown 	= "Status: Unknown"
+
+local function XOR_Decrypt(cipher, key)
+    local result = {}
+    for i = 1, #cipher do
+        local key_char = key:byte(((i - 1) % #key) + 1)
+        local cipher_char = cipher:byte(i)
+        table.insert(result, string.char(bit.bxor(cipher_char, key_char)))
+    end
+    return table.concat(result)
+end
+
+local crypto_key = "murayefeskamus"
+local encrypted_info = "\x2a\x30\x22\x33\x30\x29\x31\x47\x36\x24\x3a\x2c\x30\x33\x47\x25\x3e\x47\x23\x32\x26\x2a\x75\x47\x3a\x26\x37\x39\x26\x66\x47\x2e\x35\x2e\x22\x2e\x21\x7f\x4d\x4d\x0a\x62\x38\x47\x26\x3f\x22\x26\x23\x63\x4d\x60\x29\x26\x25\x2b\x2c\x22\x67\x4d\x4d\x4d\x4d\x0a\x70\x2a\x32\x47\x34\x3f\x32\x32\x23\x23\x47\x25\x22\x47\x26\x37\x24\x28\x25\x37\x2b\x22\x6d\x4d\x21\x28\x35\x47\x26\x25\x28\x32\x33\x47\x31\x32\x30\x3e\x32\x33\x34\x3a\x24\x6a\x4d\x4d\x0a\x26\x34\x47\x2a\x2b\x26\x31\x3e\x47\x33\x2e\x2a\x22\x34\x47\x26\x34\x47\x34\x28\x3c\x22\x47\x33\x2e\x32\x22\x72"
+local cReconnectBypassInfo_Text = XOR_Decrypt(encrypted_info, crypto_key)
+
+local ReconnectBypass_Window_Ref 		= gui.Window("var_reconnect_bypass_window_0", "Reconnect Bypass", 220, 50, 500, 270)
+
+local ReconnectBypass_Menu_GroupBox_Ref 	= gui.Groupbox(ReconnectBypass_Window_Ref, "Controller", 20, 15, 150, 80)
+local ReconnectBypass_Enable_Button_Ref 	= gui.Button(ReconnectBypass_Menu_GroupBox_Ref, "Enable", BlockSteamOutConnection)
+local ReconnectBypass_Disable_Button_Ref 	= gui.Button(ReconnectBypass_Menu_GroupBox_Ref, "Disable", UnlockSteamOutConnection)
+
+local ReconnectBypassStatus_GroupBox_Ref 	= gui.Groupbox(ReconnectBypass_Window_Ref, "Status Information", 20, (15 + 80) + 15 + 20, 150, 80)
+local ReconnectBypassStatus_Text_Ref 		= gui.Text(ReconnectBypassStatus_GroupBox_Ref, cReconnectBypassStatus_Text_Unknown .. "\n ")
+
+local ReconnectBypassInfo_GroupBox_Ref 		= gui.Groupbox(ReconnectBypass_Window_Ref, "When should I turn it on?", (150 + 20) + 20, 15, 295, ((15 + 80) + 15 + 20) + 80)
+local ReconnectBypassInfo_Text_Ref 		= gui.Text(ReconnectBypassInfo_GroupBox_Ref, cReconnectBypassInfo_Text)
+
+ReconnectBypass_Window_Ref:SetOpenKey(0x2D)
+
+local bReconnectBypassStatusEnabled 		= -1
+
+local cPowerShell_BlockFileName 	= "FILE_ENABLE.dat"
+local cPowerShell_UnlockFileName 	= "FILE_DISABLE.dat"
+local cPowerShell_ExitFileName 		= "FILE_EXIT.dat"
+
+local cPowerShell_RuleName 		= "7XnIUxGt4Tw13Lzm"
+local cPowerShell_WindowTitle 		= "z0tPP1Gfyo49xlZK"
+
+local cFullSteamPath 	= ""
+local cBackupSteamPath 	= "C:\\Program Files (x86)\\Steam\\steam.exe"
+local cSteamExeRegName  = "SteamExe"
+
+local TempBridgePath = ""
+
+function InitPowerShellScript()
+	TempBridgePath = cFullSteamPath:gsub("\\steam%.exe", "")
+	TempBridgePath = TempBridgePath:gsub("\\Steam%.exe", "")
+
+	local PowerShellScriptRAW = string.format([[Get-Process -Name "powershell" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq '%s' } | Stop-Process -Force; Start-Sleep -Milliseconds 500;$host.UI.RawUI.WindowTitle = '%s'; while ([bool](Get-Process -Name "left4dead2" -ErrorAction SilentlyContinue)) { if (Test-Path -Path '%s') { Start-Sleep -Milliseconds 500; Remove-Item -Path '%s' -Force; Remove-NetFirewallRule -DisplayName '%s'; New-NetFirewallRule -DisplayName '%s' -Direction Outbound -Action Block -Program '%s'; } if (Test-Path -Path '%s') { Start-Sleep -Milliseconds 500; Remove-Item -Path '%s' -Force; Remove-NetFirewallRule -DisplayName '%s'; } if (Test-Path -Path '%s') { Start-Sleep -Milliseconds 500; Remove-Item -Path '%s' -Force; Remove-NetFirewallRule -DisplayName '%s'; break; } Start-Sleep -Milliseconds 500; } Remove-NetFirewallRule -DisplayName '%s';]],
+
+		cPowerShell_WindowTitle, cPowerShell_WindowTitle,
+
+		TempBridgePath .. '\\' ..cPowerShell_BlockFileName, TempBridgePath .. '\\' .. cPowerShell_BlockFileName,
+		cPowerShell_RuleName, cPowerShell_RuleName, cFullSteamPath,
+
+		TempBridgePath .. '\\' .. cPowerShell_UnlockFileName, TempBridgePath .. '\\' .. cPowerShell_UnlockFileName,
+		cPowerShell_RuleName,
+
+		TempBridgePath .. '\\' .. cPowerShell_ExitFileName, TempBridgePath .. '\\' .. cPowerShell_ExitFileName,
+		cPowerShell_RuleName,
+
+		cPowerShell_RuleName
+	)
+
+	if not Shell32 then 
+		print("[-] Something went wrong")
+		return false
+	end
+
+	PowerShellScriptRAW = PowerShellScriptRAW:gsub("c:\\program files %(x86%)", "C:\\PROGRA~2")
+	PowerShellScriptRAW = PowerShellScriptRAW:gsub("C:\\Program Files %(x86%)", "C:\\PROGRA~2")
+
+	local bResult, hInstance = pcall(function()
+		return Shell32.ShellExecuteA(nil,
+				 		"runas",
+						"powershell.exe",
+						'-ExecutionPolicy Bypass -WindowStyle Hidden -Command "' .. PowerShellScriptRAW .. '"',
+						nil,
+						SW_HIDE)
+	end)
+
+	if bResult and tonumber(ffi.cast("intptr_t", hInstance)) > 32 then
+		print("[+] Launched successfully")
+	else
+		print("[-] Please relaunch Lua with admin rights")
+		return false
+	end
+
+	return true
+end
+
+function GetSteamPath()
+	if not Advapi32 then
+		cFullSteamPath = cBackupSteamPath
+	end
+	
+	local hKeySteam = ffi.new("void*[1]")
+	
+	local bResult, lpStatus = pcall(function()
+		return Advapi32.RegOpenKeyExA(HKEY_CURRENT_USER,
+					      HKEY_STEAM_SUB_PATH,
+					      0,
+					      KEY_QUERY_VALUE,
+					      hKeySteam)
+	end)
+	
+	if bResult and lpStatus == ERROR_SUCCESS then
+		local lpData 		= ffi.new("unsigned char[1024]")
+		local lpDataSize 	= ffi.new("unsigned long[1]", 1024)
+
+		bResult, lpStatus = pcall(function()
+			return Advapi32.RegQueryValueExA(hKeySteam[0],
+							 cSteamExeRegName,
+							 nil,
+							 nil,
+							 lpData,
+							 lpDataSize)
+		end)
+
+		if bResult and lpStatus == ERROR_SUCCESS then
+			cFullSteamPath = ffi.string(lpData)
+			cFullSteamPath = cFullSteamPath:gsub("/", "\\")
+		else
+			cFullSteamPath = cBackupSteamPath
+		end
+
+		pcall(function()
+			return Advapi32.RegCloseKey(hKeySteam[0])
+		end)
+	else
+		cFullSteamPath = cBackupSteamPath
+	end
+end
+
+function CreateActionFile(FileName)
+	if not Kernel32 then
+		print("[-] Something went wrong")
+		return false
+	end
+
+	local bResult, hActionFile = pcall(function()
+			return Kernel32.CreateFileA(TempBridgePath .. '\\' .. FileName, GENERIC_ALL, 0, nil, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nil)
+		end)
+
+	if bResult and hActionFile ~= INVALID_HANDLE_VALUE then
+		pcall(function()
+			return Kernel32.CloseHandle(hActionFile)
+		end)
+	else
+		print("[-] Failed to create action file")
+		return false
+	end
+
+	return true
+end
+
+function BlockSteamOutConnection()
+	if CreateActionFile(cPowerShell_BlockFileName) then
+		ReconnectBypassStatus_Text_Ref:SetText(cReconnectBypassStatus_Text_Active .. "\n ")
+		bReconnectBypassStatusEnabled = true
+	end
+end
+
+function UnlockSteamOutConnection()
+	if CreateActionFile(cPowerShell_UnlockFileName) then
+		ReconnectBypassStatus_Text_Ref:SetText(cReconnectBypassStatus_Text_Disabled .. "\n ")
+		bReconnectBypassStatusEnabled = false
+	end
+end
+
+local cCurrentVersion = "v1.0"
+
+callbacks.Register("Unload", "Reconnect Bypass unloader", function() CreateActionFile(cPowerShell_ExitFileName) callbacks.Unregister("Unload", "Reconnect Bypass unloader") end)
+
+GetSteamPath()
+InitPowerShellScript()
