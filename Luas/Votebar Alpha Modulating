@@ -1,0 +1,268 @@
+WE GOT 2 METHOD FOR THIS 
+
+THATS THE FIRST ONE
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+]]
+
+local ref       = gui.Reference("Misc", "General", "Extra")
+local vb_enable = gui.Checkbox(ref,    "vb.enable", "Vote Bar Rengi Aktif", false)
+local vb_yes    = gui.ColorPicker(ref, "vb.yes",    "Yes Rengi", 0,   255, 0,   255)
+local vb_no     = gui.ColorPicker(ref, "vb.no",     "No Rengi",  255, 0,   0,   255)
+
+local client_module = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll"))
+if client_module == 0 then print("[VoteBar] client.dll yok") return end
+print(string.format("[VoteBar] client.dll: 0x%X", tonumber(client_module)))
+
+local pMatSys = ffi.cast("void***", client_module + 0x88B7F0)[0]
+if pMatSys == nil or ffi.cast("uintptr_t", pMatSys) == 0 then
+    print("[VoteBar] pMatSys alinamadi!")
+    return
+end
+print(string.format("[VoteBar] pMatSys: 0x%X", tonumber(ffi.cast("uintptr_t", pMatSys))))
+
+local FindMat_t = ffi.typeof(
+    "void*(__fastcall*)(void*, void*, const char*, const char*, int, void*)"
+)
+local function FindMaterial(name)
+    local vt = ffi.cast("void***", pMatSys)[0]
+    local ok, res = pcall(function()
+        return ffi.cast(FindMat_t, vt[71])(pMatSys, nil, name, "VGUI textures", 1, nil)
+    end)
+    if ok and res ~= nil and ffi.cast("uintptr_t", res) > 0x10000 then
+        return res
+    end
+    return nil
+end
+
+local ColorMod_t = ffi.typeof("void(__fastcall*)(void*, void*, float, float, float)")
+local function ColorModulate(pMat, r, g, b)
+    local vt = ffi.cast("void***", pMat)[0]
+    ffi.cast(ColorMod_t, vt[28])(pMat, nil, r, g, b)
+end
+
+local AlphaMod_t = ffi.typeof("void(__fastcall*)(void*, void*, float)")
+local function AlphaModulate(pMat, a)
+    local vt = ffi.cast("void***", pMat)[0]
+    ffi.cast(AlphaMod_t, vt[27])(pMat, nil, a)
+end
+
+local pYesMat = nil
+local pNoMat  = nil
+
+local function GetVoteMaterials()
+    if pYesMat == nil then
+        pYesMat = FindMaterial("vgui/hud/vote_yes")
+        if pYesMat then print("[VoteBar] vote_yes materyali bulundu") end
+    end
+    if pNoMat == nil then
+        pNoMat = FindMaterial("vgui/hud/vote_no")
+        if pNoMat then print("[VoteBar] vote_no materyali bulundu") end
+    end
+end
+
+local last_enabled = false
+
+callbacks.Register("Draw", "VoteBar_Draw", function()
+    local enabled = vb_enable:GetValue()
+
+    if enabled then
+        GetVoteMaterials()
+
+        if pYesMat then
+            local r, g, b = vb_yes:GetValue()
+            ColorModulate(pYesMat, r / 255.0, g / 255.0, b / 255.0)
+            AlphaModulate(pYesMat, 1.0)
+        end
+        if pNoMat then
+            local r, g, b = vb_no:GetValue()
+            ColorModulate(pNoMat, r / 255.0, g / 255.0, b / 255.0)
+            AlphaModulate(pNoMat, 1.0)
+        end
+    elseif last_enabled then
+        if pYesMat then
+            ColorModulate(pYesMat, 1.0, 1.0, 1.0)
+            AlphaModulate(pYesMat, 1.0)
+        end
+        if pNoMat then
+            ColorModulate(pNoMat, 1.0, 1.0, 1.0)
+            AlphaModulate(pNoMat, 1.0)
+        end
+    end
+
+    last_enabled = enabled
+end)
+
+callbacks.Register("Unload", function()
+    if pYesMat then
+        ColorModulate(pYesMat, 1.0, 1.0, 1.0)
+        AlphaModulate(pYesMat, 1.0)
+    end
+    if pNoMat then
+        ColorModulate(pNoMat, 1.0, 1.0, 1.0)
+        AlphaModulate(pNoMat, 1.0)
+    end
+    callbacks.Unregister("Draw", "VoteBar_Draw")
+    print("[VoteBar] Kaldirildi.")
+end)
+
+
+
+
+
+
+
+
+
+
+
+
+
+AND THE SECOND 
+
+
+
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* VirtualAlloc(void* lpAddress, size_t dwSize, uint32_t flAllocationType, uint32_t flProtect);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+    void* memcpy(void* dest, const void* src, size_t n);
+]]
+
+local ref       = gui.Reference("Misc", "General", "Extra")
+local vb_enable = gui.Checkbox(ref,    "vb.enable", "Vote Bar Rengi Aktif", false)
+local vb_yes    = gui.ColorPicker(ref, "vb.yes",    "Yes Rengi", 0,   255, 0,   255)
+local vb_no     = gui.ColorPicker(ref, "vb.no",     "No Rengi",  255, 0,   0,   255)
+
+local client_module = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll"))
+if client_module == 0 then print("[VoteBar] client.dll yok") return end
+print(string.format("[VoteBar] client.dll: 0x%X", tonumber(client_module)))
+
+local pSurface = ffi.cast("void***", client_module + 0x88B8F4)[0]
+if pSurface == nil or ffi.cast("uintptr_t", pSurface) == 0 then
+    print("[VoteBar] ISurface alinamadi!")
+    return
+end
+print(string.format("[VoteBar] ISurface: 0x%X", tonumber(ffi.cast("uintptr_t", pSurface))))
+
+local surf_vtbl = ffi.cast("void***", pSurface)[0]
+
+local GetHudList_t  = ffi.typeof("void*(__cdecl*)(int)")
+local FindHudElem_t = ffi.typeof("void*(__thiscall*)(void*, const char*)")
+local BASE_OFFSET   = 380
+
+local function isValidPtr(p)
+    if p == nil then return false end
+    local v = ffi.cast("uintptr_t", p)
+    return v > 0x10000 and v < 0x7FFFFFFF
+end
+
+local function FindHudBase(name)
+    local mgr = ffi.cast(GetHudList_t, client_module + 0x10CD80)(-1)
+    if not isValidPtr(mgr) then return nil end
+    local ptr = ffi.cast(FindHudElem_t, client_module + 0x10DBA0)(mgr, name)
+    if not isValidPtr(ptr) then return nil end
+    return ffi.cast("uintptr_t", ptr) - BASE_OFFSET
+end
+
+
+local SetColor_t   = ffi.typeof("void(__fastcall*)(void*, void*, int, int, int, int)")
+local SetTexture_t = ffi.typeof("void(__fastcall*)(void*, void*, int)")
+
+local orig_settex_ptr = surf_vtbl[29]  
+local orig_setcolor   = ffi.cast(SetColor_t, surf_vtbl[11])
+
+
+local GC = { hk_settex = nil }
+
+
+local yes_tex_id = nil
+local no_tex_id  = nil
+
+local last_log = 0
+
+local function UpdateTextureIds()
+    local base = FindHudBase("CHudVote")
+    if not base then
+        if globals.RealTime() - last_log > 2 then
+            print("[VoteBar] DBG: CHudVote bulunamadi (oylama aktif degil mi?)")
+            last_log = globals.RealTime()
+        end
+        return
+    end
+
+    local bar_ptr = ffi.cast("uintptr_t", ffi.cast("void**", base)[114])
+    if not isValidPtr(bar_ptr) then
+        if globals.RealTime() - last_log > 2 then
+            print(string.format("[VoteBar] DBG: bar_ptr gecersiz: 0x%X", tonumber(bar_ptr)))
+            last_log = globals.RealTime()
+        end
+        return
+    end
+
+    local ok, yes_id = pcall(function()
+        return ffi.cast("int*", bar_ptr)[94]  
+    end)
+    if ok then yes_tex_id = yes_id end
+
+    local ok2, no_id = pcall(function()
+        return ffi.cast("int*", bar_ptr)[96]  
+    end)
+    if ok2 then no_tex_id = no_id end
+
+    if globals.RealTime() - last_log > 2 then
+        print(string.format("[VoteBar] DBG: bar_ptr=0x%X yes_id=%s no_id=%s",
+            tonumber(bar_ptr), tostring(yes_tex_id), tostring(no_tex_id)))
+        last_log = globals.RealTime()
+    end
+end
+
+GC.hk_settex = ffi.cast(SetTexture_t, function(this, edx, textureID)
+    local matched_yes = (yes_tex_id ~= nil and textureID == yes_tex_id)
+    local matched_no  = (no_tex_id ~= nil and textureID == no_tex_id)
+
+    ffi.cast(SetTexture_t, orig_settex_ptr)(this, nil, textureID)
+
+    if vb_enable:GetValue() then
+        if matched_yes then
+            print(string.format("[VoteBar] DBG: YES texture eslesti! id=%d", textureID))
+            local r, g, b, a = vb_yes:GetValue()
+            orig_setcolor(this, nil, r, g, b, 255)
+        elseif matched_no then
+            print(string.format("[VoteBar] DBG: NO texture eslesti! id=%d", textureID))
+            local r, g, b, a = vb_no:GetValue()
+            orig_setcolor(this, nil, r, g, b, 255)
+        end
+    end
+end)
+
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", surf_vtbl + 29), 4, 0x40, old)
+surf_vtbl[29] = ffi.cast("void*", GC.hk_settex)
+ffi.C.VirtualProtect(ffi.cast("void*", surf_vtbl + 29), 4, old[0], old)
+
+print("[VoteBar] DrawSetTexture hook kuruldu (slot 29, +116).")
+
+callbacks.Register("Draw", "VoteBar_Draw", function()
+    if vb_enable:GetValue() then
+        UpdateTextureIds()
+    end
+end)
+
+callbacks.Register("Unload", function()
+    local old2 = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", surf_vtbl + 29), 4, 0x40, old2)
+    surf_vtbl[29] = orig_settex_ptr
+    ffi.C.VirtualProtect(ffi.cast("void*", surf_vtbl + 29), 4, old2[0], old2)
+
+    callbacks.Unregister("Draw", "VoteBar_Draw")
+    print("[VoteBar] Hook kaldirildi.")
+end)
+
+
+
+
+
+
