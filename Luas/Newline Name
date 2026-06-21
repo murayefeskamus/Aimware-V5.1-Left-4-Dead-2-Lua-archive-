@@ -1,0 +1,81 @@
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local ref       = gui.Reference("Misc", "General", "Extra")
+local nl_enable = gui.Checkbox(ref, "nl.enable", "Newline Name", false)
+local nl_text   = gui.Editbox(ref, "nl.text", "MSG")
+local nl_count  = gui.Slider(ref, "nl.count", "Newlines", 2, 1, 30, 1)
+local nl_key    = gui.Keybox(ref, "nl.key", "Trigger Button", 0)
+
+local function GetInterface(dll, name)
+    local hMod = ffi.C.GetModuleHandleA(dll)
+    if hMod == nil then return nil end
+    local ci_addr = ffi.C.GetProcAddress(hMod, "CreateInterface")
+    if ci_addr == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)", ci_addr)
+    return ci(name, nil)
+end
+
+local pEngine = GetInterface("engine.dll", "VEngineClient014")
+if pEngine == nil or ffi.cast("uintptr_t", pEngine) == 0 then
+    pEngine = GetInterface("engine.dll", "VEngineClient013")
+end
+if pEngine == nil or ffi.cast("uintptr_t", pEngine) == 0 then
+    print("[NewlineSpam] IVEngineClient bulunamadi!")
+    return
+end
+print(string.format("[NewlineSpam] IVEngineClient: 0x%X", tonumber(ffi.cast("uintptr_t", pEngine))))
+
+local ClientCmd_t = ffi.typeof("void(__fastcall*)(void*, void*, const char*)")
+
+local function ClientCmd(cmdStr)
+    local vtbl = ffi.cast("void***", pEngine)[0]
+    ffi.cast(ClientCmd_t, vtbl[7])(pEngine, nil, cmdStr)
+end
+
+local function BuildNewlineMessage(text, count)
+    local newline = string.rep("\r", count)
+    local parts = {}
+    for i = 1, #text do
+        parts[#parts + 1] = text:sub(i, i)
+    end
+    return newline .. table.concat(parts, newline)
+end
+
+local last_message = nil
+
+callbacks.Register("CreateMove", "NewlineSpam_CM", function(cmd)
+    if not nl_enable:GetValue() then return end
+
+    local key = nl_key:GetValue()
+    if key ~= 0 and not input.IsButtonDown(key) then return end
+
+    local lp = entities.GetLocalPlayer()
+    if lp == nil then return end
+
+    local text = nl_text:GetValue()
+    if text == nil or text == "" then return end
+
+    local count = nl_count:GetValue()
+    local message = BuildNewlineMessage(text, count)
+
+    if message ~= last_message then
+        local ok, err = pcall(function()
+            ClientCmd('setinfo name "' .. message .. '"')
+        end)
+        if ok then
+            last_message = message
+        else
+            print("[NewlineSpam] hata: " .. tostring(err))
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("CreateMove", "NewlineSpam_CM")
+    print("[NewlineSpam] Kaldirildi.")
+end)
+
