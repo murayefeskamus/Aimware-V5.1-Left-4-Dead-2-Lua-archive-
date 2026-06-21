@@ -1,0 +1,197 @@
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+]]
+
+local ref        = gui.Reference("Misc", "General", "Extra")
+local fm_toggle  = gui.Checkbox(ref, "fm.toggle", "Forced Draw Fhustrmeter", false)
+local fm_debug   = gui.Checkbox(ref, "fm.debug",  "debug log", false)
+
+local client_module = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll"))
+if client_module == 0 then print("[FrustMeter] client.dll yok") return end
+print(string.format("[FrustMeter] client.dll: 0x%X", tonumber(client_module)))
+
+local GetHudList_t  = ffi.typeof("void*(__cdecl*)(int)")
+local FindHudElem_t = ffi.typeof("void*(__thiscall*)(void*, const char*)")
+local BASE_OFFSET   = 380
+
+local function isValidPtr(p)
+    if p == nil then return false end
+    local v = ffi.cast("uintptr_t", p)
+    return v > 0x10000 and v < 0x7FFFFFFF
+end
+
+local function FindHudBase(name)
+    local mgr = ffi.cast(GetHudList_t, client_module + 0x10CD80)(-1)
+    if not isValidPtr(mgr) then return nil end
+    local ptr = ffi.cast(FindHudElem_t, client_module + 0x10DBA0)(mgr, name)
+    if not isValidPtr(ptr) then return nil end
+    return ffi.cast("uintptr_t", ptr) - BASE_OFFSET
+end
+
+
+local g_FrustBase    = nil  
+local g_FrustRawPtr  = nil  
+local g_FrustVtbl    = nil
+
+local function EnsureFrustPanel()
+    if g_FrustRawPtr ~= nil and isValidPtr(ffi.cast("void*", g_FrustRawPtr)) then
+        return true
+    end
+
+    local mgr = ffi.cast(GetHudList_t, client_module + 0x10CD80)(-1)
+    if not isValidPtr(mgr) then return false end
+
+    local raw_ptr = ffi.cast(FindHudElem_t, client_module + 0x10DBA0)(mgr, "CHudFrustrationMeter")
+    if not isValidPtr(raw_ptr) then return false end
+
+    g_FrustRawPtr = ffi.cast("uintptr_t", raw_ptr)
+    g_FrustBase   = g_FrustRawPtr - BASE_OFFSET
+
+    local vtbl = ffi.cast("uintptr_t", ffi.cast("void***", raw_ptr)[0])
+    if not isValidPtr(ffi.cast("void*", vtbl)) then return false end
+    g_FrustVtbl = vtbl
+    return true
+end
+
+local ShouldDraw_t = ffi.typeof("bool(__fastcall*)(void*, void*)")
+
+
+local SHOULDDRAW_RVA = 0x2948D0 
+local shoulddraw_addr = client_module + SHOULDDRAW_RVA
+local SHOULDDRAW_SLOT = 12  
+
+local orig_shoulddraw = nil
+local hook_installed  = false
+
+local GC = { hk_shoulddraw = nil }
+
+local function InstallShouldDrawHook()
+    if hook_installed then return end
+    if not EnsureFrustPanel() then
+        return
+    end
+
+    print(string.format("[FrustMeter] DBG: g_FrustRawPtr=0x%X g_FrustVtbl=0x%X shoulddraw_addr=0x%X",
+        tonumber(g_FrustRawPtr), tonumber(g_FrustVtbl), tonumber(shoulddraw_addr)))
+
+    local vtbl_entry = ffi.cast("uintptr_t*", g_FrustVtbl) + SHOULDDRAW_SLOT
+    local current = vtbl_entry[0]
+
+    if current ~= shoulddraw_addr then
+        print(string.format("[FrustMeter] DBG: slot[%d] = 0x%X, beklenen 0x%X - eslesme YOK, dogrulama icin linear scan yapiliyor",
+            SHOULDDRAW_SLOT, tonumber(current), tonumber(shoulddraw_addr)))
+
+        local found_slot = nil
+        for i = 0, 200 do
+            local ok, entry = pcall(function()
+                return ffi.cast("uintptr_t*", g_FrustVtbl)[i]
+            end)
+            if ok and entry == shoulddraw_addr then
+                found_slot = i
+                break
+            end
+        end
+
+        if found_slot == nil then
+            print("[FrustMeter] ShouldDraw vtable slotu bulunamadi")
+            return
+        end
+
+        print(string.format("[FrustMeter] ShouldDraw slot bulundu (fallback scan): %d", found_slot))
+        vtbl_entry = ffi.cast("uintptr_t*", g_FrustVtbl) + found_slot
+    else
+        print(string.format("[FrustMeter] ShouldDraw slot dogrulandi: %d (direkt eslesme)", SHOULDDRAW_SLOT))
+    end
+
+    orig_shoulddraw = vtbl_entry[0]
+
+    GC.hk_shoulddraw = ffi.cast(ShouldDraw_t, function(this, edx)
+        if fm_toggle:GetValue() then
+            return true  -- zorla goster
+        end
+        return ffi.cast(ShouldDraw_t, orig_shoulddraw)(this, nil)
+    end)
+
+    local old = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", vtbl_entry), 4, 0x40, old)
+    vtbl_entry[0] = ffi.cast("uintptr_t", GC.hk_shoulddraw)
+    ffi.C.VirtualProtect(ffi.cast("void*", vtbl_entry), 4, old[0], old)
+
+    hook_installed = true
+    print("[FrustMeter] ShouldDraw hook kuruldu - artik toggle calismali")
+
+    _G.__FrustMeter_VtblEntry = vtbl_entry
+    _G.__FrustMeter_OrigPtr   = orig_shoulddraw
+end
+
+
+local last_log = 0
+
+local last_hook_attempt = 0
+
+callbacks.Register("Draw", "FrustMeter_Draw", function()
+    if not hook_installed then
+        local now = globals.RealTime()
+        if now - last_hook_attempt >= 3.0 then
+            last_hook_attempt = now
+            InstallShouldDrawHook()
+        end
+    end
+
+    if fm_debug:GetValue() then
+        local now = globals.RealTime()
+        if now - last_log >= 1.0 then
+            last_log = now
+
+            local base = FindHudBase("CHudFrustrationMeter")
+            if not base then
+                print("[FrustMeter] DBG: panel bulunamadi")
+                return
+            end
+
+            local ok1, progress = pcall(function()
+                return ffi.cast("float*", base + 336)[0]
+            end)
+            local ok2, raw_value = pcall(function()
+                return ffi.cast("uint32_t*", base + 340)[0]
+            end)
+            local ok3, flag = pcall(function()
+                return ffi.cast("uint8_t*", base + 345)[0]
+            end)
+
+            if ok1 and ok2 and ok3 then
+                local b0 = bit.band(raw_value, 0xFF)
+                local b1 = bit.band(bit.rshift(raw_value, 8), 0xFF)
+                local b2 = bit.band(bit.rshift(raw_value, 16), 0xFF)
+                local b3 = bit.band(bit.rshift(raw_value, 24), 0xFF)
+
+                print(string.format(
+                    "[FrustMeter] DBG: progress=%.3f this+340=%d (0x%08X) bytes=[%d,%d,%d,%d] flag=%d",
+                    progress, raw_value, raw_value, b0, b1, b2, b3, flag
+                ))
+                print("[FrustMeter] DBG: -> Eger bytes kucuk/anlamli RGB gibi gorunuyorsa renk,")
+                print("[FrustMeter] DBG:    eger raw_value kucuk bir sayi (1-2000 araligi) ise texture ID")
+            else
+                print("[FrustMeter] DBG: okuma basarisiz (panel henuz hazir degil)")
+            end
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    if hook_installed and _G.__FrustMeter_VtblEntry then
+        local old = ffi.new("uint32_t[1]")
+        ffi.C.VirtualProtect(ffi.cast("void*", _G.__FrustMeter_VtblEntry), 4, 0x40, old)
+        _G.__FrustMeter_VtblEntry[0] = _G.__FrustMeter_OrigPtr
+        ffi.C.VirtualProtect(ffi.cast("void*", _G.__FrustMeter_VtblEntry), 4, old[0], old)
+        _G.__FrustMeter_VtblEntry = nil
+        _G.__FrustMeter_OrigPtr   = nil
+        print("[FrustMeter] ShouldDraw hook kaldirildi.")
+    end
+    callbacks.Unregister("Draw", "FrustMeter_Draw")
+    print("[FrustMeter] Kaldirildi.")
+end)
+
+print("[FrustMeter] Yuklendi!")
+
