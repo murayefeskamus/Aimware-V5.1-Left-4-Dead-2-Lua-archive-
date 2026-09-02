@@ -1,0 +1,28 @@
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+    ]]
+end)
+
+local engineBase = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("engine.dll"))
+
+local GetClientState = ffi.cast(
+    "uintptr_t(__cdecl*)(void)",
+    engineBase + 0x82CA0
+)
+
+local function GetMapName()
+    local ok, cs = pcall(GetClientState)
+    if not ok or cs == 0 then return nil end
+    local ptr = ffi.cast("const char*", cs + 264)
+    if ptr == nil then return nil end
+    local ok2, name = pcall(ffi.string, ptr)
+    if not ok2 then return nil end
+    return name ~= "" and name or nil
+end
+
+-- test
+callbacks.Register("CreateMove", "maptest", function(cmd)
+    local map = GetMapName()
+    print("[MapTest]", tostring(map))
+end)
