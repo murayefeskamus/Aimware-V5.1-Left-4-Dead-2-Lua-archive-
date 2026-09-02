@@ -1,0 +1,21 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local bwBox = gui.Checkbox(ref, "custom_fake_bw", "ThirdStrike", false)
+
+local wasActive = false
+
+callbacks.Register("Draw", "l4d2_fake_bw_toggle", function()
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then return end
+
+    if bwBox:GetValue() then
+        wasActive = true
+        pLocal:SetPropInt(1, "m_bIsOnThirdStrike")
+    else
+        if wasActive then
+            pLocal:SetPropInt(0, "m_bIsOnThirdStrike")
+            wasActive = false
+        end
+    end
+end)
+
