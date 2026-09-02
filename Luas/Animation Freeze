@@ -1,0 +1,29 @@
+client sided btw 
+
+
+local ref       = gui.Reference("Misc", "General", "Extra")
+local freezeBox = gui.Checkbox(ref, "animfreeze.enabled", "Anim Freeze", false)
+
+local frozenSeq = 0
+local wasActive = false
+
+callbacks.Register("CreateMove", "animfreeze", function(cmd)
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then return end
+
+    local active = freezeBox:GetValue()
+
+    if active and not wasActive then
+        frozenSeq = pLocal:GetPropInt("m_nSequence")
+        print("[AnimFreeze] ACIK seq=" .. frozenSeq)
+    elseif not active and wasActive then
+        print("[AnimFreeze] KAPALI")
+    end
+
+    wasActive = active
+
+    if active then
+        pLocal:SetProp("m_flPlaybackRate", 0.0)
+        pLocal:SetProp("m_nSequence", frozenSeq)
+    end
+end)
