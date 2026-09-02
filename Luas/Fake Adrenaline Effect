@@ -1,0 +1,6 @@
+callbacks.Register("CreateMove", "adrenatest", function(cmd)
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then return end
+    
+    pLocal:SetProp("m_bAdrenalineActive", 1)
+end)
