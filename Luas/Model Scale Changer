@@ -1,0 +1,73 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+
+
+local enableBox   = gui.Checkbox(ref, "mscale_master", "Master Model Scaler", false)
+
+local localSlider = gui.Slider(ref, "mscale_local", "Local", 1.0, 0.2, 3.0, 0.1)
+local survSlider  = gui.Slider(ref, "mscale_surv", "Survivors", 1.0, 0.2, 3.0, 0.1)
+local siSlider    = gui.Slider(ref, "mscale_si", "Special Infecteds", 1.0, 0.2, 3.0, 0.1)
+local ciSlider    = gui.Slider(ref, "mscale_ci", "Commons", 1.0, 0.2, 3.0, 0.1)
+
+local wasEnabled = false
+
+callbacks.Register("Draw", "l4d2_multi_entity_scale", function()
+    local isEnabled = enableBox:GetValue()
+
+  
+    if not isEnabled then
+        if wasEnabled then
+            local pLocal = entities.GetLocalPlayer()
+            if pLocal then pLocal:SetPropFloat(1.0, "m_flModelScale") end
+
+            local players = entities.FindByClass("CTerrorPlayer")
+            for _, ent in pairs(players) do
+                ent:SetPropFloat(1.0, "m_flModelScale")
+            end
+
+            local infected = entities.FindByClass("Infected")
+            for _, ent in pairs(infected) do
+                ent:SetPropFloat(1.0, "m_flModelScale")
+            end
+
+            wasEnabled = false
+        end
+        return
+    end
+
+    wasEnabled = true
+
+    local pLocal = entities.GetLocalPlayer()
+    local localScale = localSlider:GetValue()
+    local survScale  = survSlider:GetValue()
+    local siScale    = siSlider:GetValue()
+    local ciScale    = ciSlider:GetValue()
+
+    
+    if pLocal and pLocal:IsAlive() then
+        pLocal:SetPropFloat(localScale, "m_flModelScale")
+    end
+
+    
+    local players = entities.FindByClass("CTerrorPlayer")
+    for _, ent in pairs(players) do
+        if ent and ent:IsAlive() and ent:GetIndex() ~= (pLocal and pLocal:GetIndex()) then
+            local team = ent:GetTeamNumber()
+            if team == 2 then
+           
+                ent:SetPropFloat(survScale, "m_flModelScale")
+            elseif team == 3 then
+              
+                ent:SetPropFloat(siScale, "m_flModelScale")
+            end
+        end
+    end
+
+ 
+    local infected = entities.FindByClass("Infected")
+    for _, ent in pairs(infected) do
+        if ent and ent:IsAlive() then
+            ent:SetPropFloat(ciScale, "m_flModelScale")
+        end
+    end
+end)
+
