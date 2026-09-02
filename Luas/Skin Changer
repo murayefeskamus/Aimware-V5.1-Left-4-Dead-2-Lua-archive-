@@ -1,0 +1,10 @@
+FIRSTPERSON ONLY 
+
+
+callbacks.Register("CreateMove", "chartest", function(cmd)
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then return end
+    
+    -- 0=Bill/Nick, 1=Zoey/Rochelle, 2=Louis/Coach, 3=Francis/Ellis
+    pLocal:SetProp("m_survivorCharacter", 2)
+end)
