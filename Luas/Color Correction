@@ -1,0 +1,282 @@
+WARNING: IT LL BE CRASH AFTER NEW UPDATE ITS JUST AN EXAMPLE FOR HOOKING
+
+
+
+-- Visual Color Grade 
+-- Target: materialsystem.dll + 0x1B30 = IColorCorrectionSystem::SetLookupDirty
+ffi.cdef[[
+    void* VirtualAlloc(void* lpAddress, size_t dwSize, uint32_t flAllocationType, uint32_t flProtect);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+    void* memcpy(void* dest, const void* src, size_t n);
+    void* GetModuleHandleA(const char* lpModuleName);
+    typedef void (__fastcall *cc_setdirty_fn)(void* ecx, void* edx, int a2, uint8_t a3);
+]]
+local PAGE_EXECUTE_READWRITE = 0x40
+local MEM_COMMIT             = 0x1000
+local MEM_RESERVE            = 0x2000
+local HOOK_SIZE              = 6   
+local BYTES_TO_COPY          = 9   
+
+local ref       = gui.Reference("Misc", "General", "Extra")
+local cc_enable = gui.Checkbox(ref, "vcc2.enable", "Visual Color Grade", true)
+local cc_hue    = gui.Slider(ref,   "vcc2.hue",    "Hue",           0,  -180, 180, 1)
+local cc_sat    = gui.Slider(ref,   "vcc2.sat",    "Saturation",   140,    0, 200, 1)
+local cc_bright = gui.Slider(ref,   "vcc2.bright", "Brightness",   100,    0, 200, 1)
+local cc_temp   = gui.Slider(ref,   "vcc2.temp",   "Temperature",  -40, -100, 100, 1)
+
+local LUT_SIZE  = 32 * 32 * 32  
+local LUT_BYTES = LUT_SIZE * 3  
+local IDENTITY = {}
+do
+    local idx = 0
+    for b = 0, 31 do
+        for g = 0, 31 do
+            for r = 0, 31 do
+                IDENTITY[idx]   = math.floor(r * 255/31 + 0.5)
+                IDENTITY[idx+1] = math.floor(g * 255/31 + 0.5)
+                IDENTITY[idx+2] = math.floor(b * 255/31 + 0.5)
+                idx = idx + 3
+            end
+        end
+    end
+end
+
+local floor = math.floor
+local max   = math.max
+local min   = math.min
+local function fmod1(x)
+    x = x % 1.0
+    return x < 0 and x + 1.0 or x
+end
+local function rgb_to_hsv(r, g, b)
+    local fr, fg, fb = r/255, g/255, b/255
+    local cmax  = max(fr, fg, fb)
+    local delta = cmax - min(fr, fg, fb)
+    local h     = 0.0
+    if delta > 0 then
+        if     cmax == fr then h = ((fg - fb) / delta) % 6
+        elseif cmax == fg then h = (fb - fr) / delta + 2
+        else                   h = (fr - fg) / delta + 4
+        end
+        h = h / 6.0
+    end
+    return h, (cmax == 0) and 0.0 or (delta / cmax), cmax
+end
+local function hsv_to_rgb(h, s, v)
+    local hh = h * 6.0
+    local i   = floor(hh) % 6
+    local f   = hh - floor(hh)
+    local p   = v * (1 - s)
+    local q   = v * (1 - f * s)
+    local t   = v * (1 - (1-f) * s)
+    local fr, fg, fb
+    if     i == 0 then fr,fg,fb = v,t,p
+    elseif i == 1 then fr,fg,fb = q,v,p
+    elseif i == 2 then fr,fg,fb = p,v,t
+    elseif i == 3 then fr,fg,fb = p,q,v
+    elseif i == 4 then fr,fg,fb = t,p,v
+    else               fr,fg,fb = v,p,q
+    end
+    local function c(x) return max(0, min(255, floor(x*255+0.5))) end
+    return c(fr), c(fg), c(fb)
+end
+local function apply_grade(rgb_ptr, orig)
+    local hs = cc_hue:GetValue()    / 360.0
+    local sm = cc_sat:GetValue()    / 100.0
+    local bm = cc_bright:GetValue() / 100.0
+    local t  = cc_temp:GetValue()   / 100.0
+    local rM = 1.0 + t * 0.40
+    local gM = 1.0 + t * 0.08
+    local bM = 1.0 - t * 0.40
+    for i = 0, LUT_SIZE - 1 do
+        local base = i * 3
+        local h, s, v = rgb_to_hsv(orig[base], orig[base+1], orig[base+2])
+        h = fmod1(h + hs)
+        s = max(0, min(1, s * sm))
+        v = max(0, min(1, v * bm))
+        local r, g, b = hsv_to_rgb(h, s, v)
+        rgb_ptr[base]   = max(0, min(255, floor(r * rM + 0.5)))
+        rgb_ptr[base+1] = max(0, min(255, floor(g * gM + 0.5)))
+        rgb_ptr[base+2] = max(0, min(255, floor(b * bM + 0.5)))
+    end
+end
+local function restore_lut(rgb_ptr, orig)
+    for i = 0, LUT_BYTES-1 do rgb_ptr[i] = orig[i] end
+end
+
+local function WriteHook(target, dest)
+    local old = ffi.new("uint32_t[1]")
+    if ffi.C.VirtualProtect(ffi.cast("void*", target), HOOK_SIZE, PAGE_EXECUTE_READWRITE, old) == 0 then
+        return false
+    end
+    local p = ffi.cast("uint8_t*", target)
+    p[0] = 0x68 
+    ffi.cast("uint32_t*", p + 1)[0] = ffi.cast("uint32_t", ffi.cast("void*", dest))
+    p[5] = 0xC3  
+    ffi.C.VirtualProtect(ffi.cast("void*", target), HOOK_SIZE, old[0], old)
+    return true
+end
+local function CreateTrampoline(original, n)
+    local tramp = ffi.C.VirtualAlloc(nil, 64, MEM_COMMIT + MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+    if tramp == nil then return nil end
+   
+    for i = 0, 63 do ffi.cast("uint8_t*", tramp)[i] = 0x90 end
+    
+    ffi.C.memcpy(tramp, ffi.cast("void*", original), n)
+   
+    local jmp = ffi.cast("uint8_t*", tramp) + n
+    local ret_addr = ffi.cast("uint8_t*", original) + n
+    jmp[0] = 0x68
+    ffi.cast("uint32_t*", jmp + 1)[0] = ffi.cast("uint32_t", ret_addr)
+    jmp[5] = 0xC3
+    return tramp
+end
+
+local GC = {
+    target_ptr      = nil,
+    trampoline      = nil,
+    detour_cast     = nil,
+    original_caller = nil,
+}
+_G.vcc_GC = GC  
+
+local lut_cache = {}
+
+local function detour(ecx, edx, handle, flush)
+    local cc_addr = tonumber(ffi.cast("uintptr_t", ecx))
+   
+    if cc_addr < 0x10000 then
+        if GC.original_caller then
+            ffi.cast("cc_setdirty_fn", GC.original_caller)(ecx, edx, handle, flush)
+        end
+        return
+    end
+  
+    local cc    = ffi.cast("uintptr_t*", ecx)
+    local count = tonumber(cc[4])
+    local lptr  = tonumber(cc[1])
+    if lptr == 0 or count <= 0 or count > 64 then
+        if GC.original_caller then
+            ffi.cast("cc_setdirty_fn", GC.original_caller)(ecx, edx, handle, flush)
+        end
+        return
+    end
+   
+    local list  = ffi.cast("uintptr_t*", lptr)
+    local obj   = nil
+    local rgb_a = nil
+    for i = 0, count - 1 do
+        local o = tonumber(list[i])
+        if o and o > 0x10000 then
+            if tonumber(ffi.cast("int32_t*", o)[0]) == handle then
+                local f  = ffi.cast("uintptr_t*", o)
+                local tx = tonumber(f[1])
+                local rg = tonumber(f[2])
+                if tx > 0x10000 and rg > 0x10000 then
+                    obj  = o
+                    rgb_a = rg
+                end
+                break
+            end
+        end
+    end
+  
+    if GC.original_caller then
+        ffi.cast("cc_setdirty_fn", GC.original_caller)(ecx, edx, handle, flush)
+    end
+   
+    if obj and rgb_a then
+        local rp = ffi.cast("uint8_t*", rgb_a)
+        
+        if lut_cache[obj] == nil then
+            local orig = {}
+            local mid  = 500 * 3  
+            if rp[mid] ~= 0 or rp[mid+1] ~= 0 or rp[mid+2] ~= 0 then
+                for k = 0, LUT_BYTES-1 do orig[k] = rp[k] end
+                print(string.format("[VCC] snap obj=0x%X mid=(%d,%d,%d)",
+                    obj, orig[mid], orig[mid+1], orig[mid+2]))
+            else
+                
+                for k = 0, LUT_BYTES-1 do orig[k] = IDENTITY[k] end
+                print(string.format("[VCC] identity base obj=0x%X", obj))
+            end
+            lut_cache[obj] = { original = orig }
+        end
+        local snap = lut_cache[obj]
+        if snap then
+            if cc_enable:GetValue() then
+                apply_grade(rp, snap.original)
+            else
+                restore_lut(rp, snap.original)
+            end
+           
+            ffi.cast("uint8_t*", obj + 12)[0] = 0
+            
+            local tex = tonumber(ffi.cast("uintptr_t*", obj)[1])
+            if tex > 0x10000 then
+                local vtbl = tonumber(ffi.cast("uintptr_t*", tex)[0])
+                if vtbl > 0x10000 then
+                    local dl = tonumber(ffi.cast("uintptr_t*", vtbl)[13])
+                    if dl > 0x10000 then
+                        local ok, err = pcall(
+                            ffi.cast("void(__fastcall*)(void*,void*,int,int)", dl),
+                            ffi.cast("void*", tex), nil, 0, 0
+                        )
+                        if not ok then
+                            print("[VCC] DownloadToHardware hata: " .. tostring(err))
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local matbase = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("materialsystem.dll"))
+if matbase == 0 then
+    print("[VCC] FATAL: materialsystem.dll bulunamadi")
+    return
+end
+print(string.format("[VCC] materialsystem.dll base: 0x%X", tonumber(matbase)))
+local target_addr = tonumber(matbase) + 0x1B30
+
+local b0 = ffi.cast("uint8_t*", target_addr)[0]
+if b0 ~= 0x55 and b0 ~= 0x8B and b0 ~= 0x53 and b0 ~= 0x56 then
+    print(string.format("[VCC] Gecersiz prolog 0x%02X — iptal", b0))
+    return
+end
+print(string.format("[VCC] Target: 0x%X  prolog: 0x%02X", target_addr, b0))
+
+local tramp = CreateTrampoline(target_addr, BYTES_TO_COPY)
+if tramp == nil then
+    print("[VCC] VirtualAlloc basarisiz")
+    return
+end
+
+local cb = ffi.cast("cc_setdirty_fn", detour)
+
+if not WriteHook(target_addr, cb) then
+    print("[VCC] WriteHook basarisiz")
+    return
+end
+GC.target_ptr      = target_addr
+GC.trampoline      = tramp
+GC.detour_cast     = cb
+GC.original_caller = tramp 
+print(string.format("[VCC] Hook aktif  target=0x%X  trampoline=0x%X",
+    target_addr,
+    tonumber(ffi.cast("uintptr_t", tramp))))
+
+function on_unload()
+    local g = _G.vcc_GC
+    if not g or not g.target_ptr then return end
+    
+    local old = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", g.target_ptr), BYTES_TO_COPY, PAGE_EXECUTE_READWRITE, old)
+    ffi.C.memcpy(ffi.cast("void*", g.target_ptr), g.trampoline, BYTES_TO_COPY)
+    ffi.C.VirtualProtect(ffi.cast("void*", g.target_ptr), BYTES_TO_COPY, old[0], old)
+    _G.vcc_GC = nil
+    print("[VCC] Unloaded.")
+end
+print("[VCC] Hazir! Misc > Extra > Visual Color Grade")
+
