@@ -1,0 +1,25 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local waterBox   = gui.Checkbox(ref, "custom_water_active", "Fake Water Level Effect", false)
+local waterCombo = gui.Combobox(ref, "custom_water_level", "Su Seviyesi", "0", "1", "2", "3")
+
+local wasActive  = false
+
+callbacks.Register("CreateMove", "l4d2_fake_water_level", function(cmd)
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then return end
+
+    if waterBox:GetValue() then
+        wasActive = true
+
+ 
+        local selectedLevel = waterCombo:GetValue()
+        pLocal:SetPropInt(selectedLevel, "m_nWaterLevel")
+    else
+        if wasActive then
+            pLocal:SetPropInt(0, "m_nWaterLevel")
+            wasActive = false
+        end
+    end
+end)
+
