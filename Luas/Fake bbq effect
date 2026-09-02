@@ -1,0 +1,30 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local burnBox   = gui.Checkbox(ref, "custom_burn_enable", "Yanık oç", false)
+local burnSlider = gui.Slider(ref, "custom_burn_val", "burn", 1.0, 0.0, 1.0, 0.05)
+local bbqSlider  = gui.Slider(ref, "custom_bbq_val", "bbq", 1.0, 0.0, 1.0, 0.05)
+
+local wasActive = false
+
+callbacks.Register("Draw", "l4d2_burn_effect_handler", function()
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then return end
+
+    if burnBox:GetValue() then
+        wasActive = true
+
+        local burnVal = burnSlider:GetValue()
+        local bbqVal  = bbqSlider:GetValue()
+
+       
+        pLocal:SetPropFloat(burnVal, "m_burnPercent")
+        pLocal:SetPropFloat(bbqVal, "m_bbqPercent")
+    else
+      
+        if wasActive then
+            pLocal:SetPropFloat(0.0, "m_burnPercent")
+            pLocal:SetPropFloat(0.0, "m_bbqPercent")
+            wasActive = false
+        end
+    end
+end)
