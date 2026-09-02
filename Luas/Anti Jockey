@@ -1,0 +1,30 @@
+local anti_jockey = gui.Checkbox(
+    gui.Reference("Misc", "Movement"),
+    "anti_jockey",
+    "Anti Jockey",
+    false
+)
+
+local jockey_riding = false
+
+callbacks.Register("FireGameEvent", function(event)
+    if not event then return end
+
+    local name = event:GetName()
+
+    if name == "jockey_ride" then
+        jockey_riding = true
+
+    elseif name == "jockey_ride_end" then
+        jockey_riding = false
+    end
+end)
+
+callbacks.Register("CreateMove", function(cmd)
+    if not cmd then return end
+    if not anti_jockey:GetValue() then return end
+
+    if jockey_riding then
+        cmd.tick_count = 0x7FFFFFFF
+    end
+end)
