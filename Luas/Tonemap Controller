@@ -1,0 +1,25 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local toneBox   = gui.Checkbox(ref, "custom_tonemap_active", "Tonemap", false)
+local expSlider = gui.Slider(ref, "custom_tonemap_exposure", "Exposure", 3.0, 0.1, 10.0, 0.1)
+local bloomSlider = gui.Slider(ref, "custom_tonemap_bloom", "Bloom", 1.0, 0.0, 10.0, 0.5)
+
+callbacks.Register("Draw", "l4d2_tonemap_controller", function()
+    if not toneBox:GetValue() then return end
+
+    local tonemaps = entities.FindByClass("CEnvTonemapController")
+    if not tonemaps then return end
+
+    local exp = expSlider:GetValue()
+    local bloom = bloomSlider:GetValue()
+
+    for _, map in pairs(tonemaps) do
+        map:SetPropInt(1, "m_bUseCustomAutoExposureMin")
+        map:SetPropInt(1, "m_bUseCustomAutoExposureMax")
+        map:SetPropInt(1, "m_bUseCustomBloomScale")
+
+        map:SetPropFloat(exp, "m_flCustomAutoExposureMin")
+        map:SetPropFloat(exp, "m_flCustomAutoExposureMax")
+        map:SetPropFloat(bloom, "m_flCustomBloomScale")
+    end
+end)
