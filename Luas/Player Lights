@@ -1,0 +1,127 @@
+L4D2 Dynamic Light (ELight)
+ g_pEffects: void** cast, [0] = IEffects*
+ dlight_t.key = +36 
+ AllocELight: __thiscall 
+
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    typedef struct {
+        int     flags;
+        float   origin_x;
+        float   origin_y;
+        float   origin_z;
+        float   radius;
+        uint8_t color_r;
+        uint8_t color_g;
+        uint8_t color_b;
+        int8_t  exponent;
+        float   die;
+        float   decay;
+        float   minlight;
+        int     key;
+        int     style;
+    } dlight_t;
+]]
+
+local ref       = gui.Reference("Misc", "General", "Extra")
+local pl_enable = gui.Checkbox(ref,    "dl.pl_en",  "Player DLight Aktif",  false)
+local pl_color  = gui.ColorPicker(ref, "dl.pl_col", "Player Isik Rengi",    0,   200, 255, 255)
+local pl_radius = gui.Slider(ref,      "dl.pl_rad", "Player Yaricap",        150, 50, 500, 1)
+local wp_enable = gui.Checkbox(ref,    "dl.wp_en",  "Weapon DLight Aktif",  false)
+local wp_color  = gui.ColorPicker(ref, "dl.wp_col", "Weapon Isik Rengi",    255, 100, 0,   255)
+local wp_radius = gui.Slider(ref,      "dl.wp_rad", "Weapon Yaricap",        80,  20, 300, 1)
+
+local client_module = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll"))
+if client_module == 0 then print("[DLight] client.dll bulunamadi") return end
+print(string.format("[DLight] client.dll: 0x%X", tonumber(client_module)))
+
+-- dword_10735E44 = IEffects*
+local g_pEffects = ffi.cast("void**", client_module + 0x735E44)
+
+
+local AllocELight_t = ffi.typeof("dlight_t*(__fastcall*)(void*, void*, int)")
+
+local function AllocELight(key)
+    local pThis = g_pEffects[0]
+    if pThis == nil or ffi.cast("uintptr_t", pThis) < 0x10000 then return nil end
+    local vtbl = ffi.cast("void***", pThis)[0]
+    return ffi.cast(AllocELight_t, vtbl[5])(pThis, nil, key)
+end
+
+local KEY_PLAYER = 0x10000000
+local KEY_WEAPON = 0x20000000
+
+local function isValid(p)
+    if p == nil then return false end
+    return ffi.cast("uintptr_t", p) > 0x10000
+end
+
+callbacks.Register("Draw", "DLight_Draw", function()
+    local ok, err = pcall(function()
+        local lp = entities.GetLocalPlayer()
+        if not lp then return end
+
+        if pl_enable:GetValue() then
+            local players = entities.FindByClass("CTerrorPlayer")
+            if players then
+                for _, ent in ipairs(players) do
+                    if ent and ent:IsAlive() then
+                        local idx = ent:GetIndex()
+                        local dl  = AllocELight(idx + KEY_PLAYER)
+                        if isValid(dl) then
+                            local pos = ent:GetAbsOrigin()
+                            local r, g, b = pl_color:GetValue()
+                            dl.flags    = 0
+                            dl.origin_x = pos.x
+                            dl.origin_y = pos.y
+                            dl.origin_z = pos.z + 40
+                            dl.radius   = pl_radius:GetValue()
+                            dl.color_r  = r
+                            dl.color_g  = g
+                            dl.color_b  = b
+                            dl.exponent = 0
+                            dl.die      = globals.RealTime() + 0.05
+                            dl.decay    = 0.0
+                            dl.minlight = 0.0
+                            dl.key      = idx + KEY_PLAYER
+                            dl.style    = 0
+                        end
+                    end
+                end
+            end
+        end
+
+        if wp_enable:GetValue() then
+            local weapon = lp:GetPropEntity("m_hActiveWeapon")
+            if weapon then
+                local idx = weapon:GetIndex()
+                local dl  = AllocELight(idx + KEY_WEAPON)
+                if isValid(dl) then
+                    local pos = lp:GetAbsOrigin()
+                    local r, g, b = wp_color:GetValue()
+                    dl.flags    = 0
+                    dl.origin_x = pos.x
+                    dl.origin_y = pos.y
+                    dl.origin_z = pos.z + 20
+                    dl.radius   = wp_radius:GetValue()
+                    dl.color_r  = r
+                    dl.color_g  = g
+                    dl.color_b  = b
+                    dl.exponent = 0
+                    dl.die      = globals.RealTime() + 0.05
+                    dl.decay    = 0.0
+                    dl.minlight = 0.0
+                    dl.key      = idx + KEY_WEAPON
+                    dl.style    = 0
+                end
+            end
+        end
+    end)
+    if not ok then print("[DLight] hata: " .. tostring(err)) end
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("Draw", "DLight_Draw")
+    print("[DLight] Kaldirildi.")
+end)
