@@ -1,0 +1,9 @@
+just a client sided set 
+
+
+callbacks.Register("CreateMove", "hpbuffertest", function(cmd)
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then return end
+    
+    pLocal:SetProp("m_healthBuffer", 100000.0)
+end)
