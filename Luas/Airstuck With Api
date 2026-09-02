@@ -1,0 +1,10 @@
+local ref         = gui.Reference("Misc", "General", "Extra")
+local airstuckKey = gui.Keybox(ref, "airstuck.key", "Airstuck", 0)
+
+callbacks.Register("CreateMove", "airstuck", function(cmd)
+    local key = airstuckKey:GetValue()
+    if key ~= 0 and input.IsButtonDown(key) then
+        cmd.tick_count = 0x7FFFFFFF
+    end
+end)
+
