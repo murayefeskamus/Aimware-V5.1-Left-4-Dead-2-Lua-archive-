@@ -1,0 +1,58 @@
+local font = draw.CreateFont("Tahoma", 13, 700)
+local msgs = {}
+
+client.AllowListener("award_earned")
+
+callbacks.Register("FireGameEvent", function(event)
+    if event:GetName() ~= "award_earned" then return end
+
+    local userid = event:GetInt("userid")
+    local award  = event:GetInt("award")
+    local idx    = client.GetPlayerIndexByUserID(userid)
+    local ent    = entities.GetByIndex(idx)
+    local name   = ent and ent:GetName() or ("Player#" .. userid)
+
+    local txt = name .. " → Award #" .. award
+
+    print("[Achievement] " .. txt)
+
+    table.insert(msgs, 1, {
+        text   = txt,
+        time   = globals.RealTime(),
+        expire = globals.RealTime() + 6.0,
+    })
+    if #msgs > 8 then table.remove(msgs) end
+end)
+
+callbacks.Register("Draw", "award_draw", function()
+    if #msgs == 0 then return end
+    local now    = globals.RealTime()
+    local _, sh  = draw.GetScreenSize()
+    draw.SetFont(font)
+
+    local y = sh - 30
+    local i = 1
+    while i <= #msgs do
+        local m = msgs[i]
+        if now > m.expire then
+            table.remove(msgs, i)
+        else
+            local age   = now - m.time
+            local alpha = age < 4.5 and 255 or math.max(0, math.floor(255*(1-(age-4.5)/1.5)))
+            local tw, _ = draw.GetTextSize(m.text)
+
+            draw.Color(0,0,0,math.floor(alpha*0.7))
+            draw.Text(11, y+1, m.text)
+            draw.Color(255,200,50,alpha)
+            draw.Text(10, y, m.text)
+
+            y = y - 18
+            i = i + 1
+        end
+    end
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("FireGameEvent", "award_draw")
+    callbacks.Unregister("Draw", "award_draw")
+end)
