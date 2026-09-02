@@ -1,0 +1,583 @@
+
+-- CedaPug All-in-One
+
+
+local POLL_INTERVAL = 5.0
+local PHPSESSID     = "" 
+
+
+local ref = gui.Reference("Misc")
+local tab = gui.Tab(ref, "cedapug.tab", "CedaPug")
+local box_main = gui.Groupbox(tab, "CedaPug", 16, 16, 320, 0)
+
+local chk_autojoin  = gui.Checkbox(box_main, "ceda.autojoin",  "Auto Join (Connect)", false)
+local chk_autovote  = gui.Checkbox(box_main, "ceda.autovote",  "Auto Vote Map",       false)
+local chk_mapvotes  = gui.Checkbox(box_main, "ceda.mapvotes",  "Map Votes",           false)
+local chk_chatread  = gui.Checkbox(box_main, "ceda.chatread",  "Chat Reader",         false)
+local chk_userlist  = gui.Checkbox(box_main, "ceda.userlist",  "User List (MMR)",     false)
+local chk_queueview = gui.Checkbox(box_main, "ceda.queueview", "Queue Viewer",        false)
+local chk_partyview = gui.Checkbox(box_main, "ceda.partyview", "Party Viewer",        false)
+local chk_killsay    = gui.Checkbox(box_main, "ceda.killsay",   "Chat Killsay",        false)
+local chk_streamers  = gui.Checkbox(box_main, "ceda.streamers", "Streamers (Kick)",    false)
+local chk_chatspam   = gui.Checkbox(box_main, "ceda.chatspam",  "Chat Spammer",        false)
+local chk_cedakillsay= gui.Checkbox(box_main, "ceda.cedakill",  "Killsay → Ceda Chat", false)
+
+gui.Text(box_main, " ")
+gui.Text(box_main, "Chat Spam Mesajı")
+local spam_msg      = gui.Editbox(box_main, "ceda.spammsg", "Spam Mesaj")
+spam_msg:SetValue("gg")
+local spam_interval = gui.Slider(box_main, "ceda.spamint", "Spam Aralığı (ms)", 1000, 50, 60000)
+
+gui.Text(box_main, " ")
+gui.Text(box_main, "Killsay Mesajı")
+
+local killsay_msg = gui.Editbox(box_main, "ceda.killmsg1", "Mesaj")
+killsay_msg:SetValue("ez")
+
+
+local font_main  = draw.CreateFont("Tahoma", 13, 700)
+local font_small = draw.CreateFont("Tahoma", 11, 600)
+
+
+local last_poll      = {}
+local connected      = false
+local chat_since_id  = 0
+local chat_messages  = {}
+local user_list      = {}
+local queue_data     = {}
+local streamer_list  = {}
+local map_votes      = {}
+local my_userid      = nil
+local last_spam_time = 0
+
+pcall(function()
+    ffi.cdef[[
+        void* WinHttpOpen(const wchar_t* agent, uint32_t access,
+            const wchar_t* proxy, const wchar_t* bypass, uint32_t flags);
+        void* WinHttpConnect(void* session, const wchar_t* host,
+            uint16_t port, uint32_t reserved);
+        void* WinHttpOpenRequest(void* connect, const wchar_t* verb,
+            const wchar_t* path, const wchar_t* version,
+            const wchar_t* referrer, const wchar_t** types, uint32_t flags);
+        bool WinHttpSendRequest(void* request, const wchar_t* headers,
+            uint32_t headersLen, void* optional, uint32_t optionalLen,
+            uint32_t totalLen, uint32_t* context);
+        bool WinHttpReceiveResponse(void* request, void* reserved);
+        bool WinHttpCloseHandle(void* handle);
+    ]]
+end)
+
+local function ToWide(str)
+    local wide = ffi.new("wchar_t[?]", #str + 1)
+    for i = 1, #str do wide[i-1] = str:byte(i) end
+    wide[#str] = 0
+    return wide
+end
+
+local function WinHttpPost(path, body_str, cookie)
+    local ok, err = pcall(function()
+        local wh      = ffi.load("winhttp")
+        local session = wh.WinHttpOpen(ToWide("Mozilla/5.0"), 1, ToWide(""), ToWide(""), 0)
+        if not session then return end
+
+        local connect = wh.WinHttpConnect(session, ToWide("cedapug.com"), 443, 0)
+        if not connect then wh.WinHttpCloseHandle(session) return end
+
+        local request = wh.WinHttpOpenRequest(connect, ToWide("POST"),
+            ToWide(path), nil, nil, nil, 0x00800000)
+        if not request then
+            wh.WinHttpCloseHandle(connect)
+            wh.WinHttpCloseHandle(session)
+            return
+        end
+
+        local headers = "Content-Type: application/x-www-form-urlencoded\r\nCookie: PHPSESSID=" .. cookie .. "\r\n"
+        local wheaders = ToWide(headers)
+        local body_data = ffi.new("char[?]", #body_str + 1, body_str)
+
+        wh.WinHttpSendRequest(request, wheaders, #headers,
+            body_data, #body_str, #body_str, nil)
+        wh.WinHttpReceiveResponse(request, nil)
+        wh.WinHttpCloseHandle(request)
+        wh.WinHttpCloseHandle(connect)
+        wh.WinHttpCloseHandle(session)
+    end)
+    if not ok then print("[CedaPost] Hata: " .. tostring(err)) end
+end
+
+local function SendCedaChat(msg)
+    if PHPSESSID == "" then
+        print("[CedaPost] PHPSESSID girilmemiş!")
+        return
+    end
+    
+    local encoded = msg:gsub(" ", "+"):gsub("([^%w%+%-%.%_%~])", function(c)
+        return string.format("%%%02X", string.byte(c))
+    end)
+    local body = "source=global&msgContent=" .. encoded
+    WinHttpPost("/cedapug/php/post/sendchat.php", body, PHPSESSID)
+    print("[CedaChat] Gönderildi: " .. msg)
+end
+
+local function GetMyUserID()
+    if my_userid then return my_userid end
+    local me = entities.GetLocalPlayer()
+    if not me then return nil end
+    local info = client.GetPlayerInfo(me:GetIndex())
+    if info then my_userid = info.userID end
+    return my_userid
+end
+
+local function GetPollTime(key) return last_poll[key] or 0 end
+local function SetPollTime(key) last_poll[key] = globals.RealTime() end
+
+
+local function CalcMMR(mu, sigma)
+    if sigma > 3 then return nil end  
+    return math.floor(mu * 100 - sigma * 300)
+end
+
+local function DecodeUnicode(str)
+    
+    str = str:gsub("\\u%x%x%x%x", "")
+    str = str:gsub("\\n", " ")
+    str = str:gsub("\\t", " ")
+    return str
+end
+
+local function DrawPanel(x, y, w, h, title, tr, tg, tb)
+    draw.Color(0, 0, 0, 160)
+    draw.FilledRect(x, y, x + w, y + h)
+    draw.Color(tr, tg, tb, 200)
+    draw.OutlinedRect(x, y, x + w, y + h)
+    draw.SetFont(font_main)
+    draw.Color(tr, tg, tb, 255)
+    draw.Text(x + 6, y + 4, title)
+    draw.Color(tr, tg, tb, 80)
+    draw.Line(x, y + 20, x + w, y + 20)
+end
+
+
+local function PollAutoJoin()
+    if not chk_autojoin:GetValue() then return end
+    if connected then return end
+    if globals.RealTime() - GetPollTime("autojoin") < POLL_INTERVAL then return end
+    SetPollTime("autojoin")
+
+    http.Get("https://cedapug.com/cedapug/php/get/queues.php", function(body)
+        if not body or body == "" then return end
+        local ip   = body:match('"ServerIp":"([^"]+)"') or
+                     body:match('"server_ip":"([^"]+)"') or
+                     body:match('"ip":"([^"]+)"')
+        local port = body:match('"ServerPort":(%d+)') or
+                     body:match('"server_port":(%d+)') or
+                     body:match('"port":(%d+)')
+        if ip and port then
+            print("[CedaPug] Maç bulundu! " .. ip .. ":" .. port)
+            client.Command("connect " .. ip .. ":" .. port, true)
+            connected = true
+        end
+    end)
+end
+
+
+local function PollChatReader()
+    if not chk_chatread:GetValue() then return end
+    if globals.RealTime() - GetPollTime("chat") < 3 then return end
+    SetPollTime("chat")
+
+    local url = "https://cedapug.com/cedapug/php/get/chat.php?source=global&sinceId=" .. chat_since_id
+
+    http.Get(url, function(body)
+        if not body or body == "" then return end
+
+       
+        for obj in body:gmatch('%{[^{}]+%}') do
+            local id   = tonumber(obj:match('"MsgId":(%d+)'))
+            local name = obj:match('"PersonaName":"([^"]+)"')
+            local msg  = obj:match('"MsgContent":"([^"]+)"')
+
+            if id and name and msg and id > chat_since_id then
+                chat_since_id = id
+                table.insert(chat_messages, 1, {
+                    name = name,
+                    msg  = msg,
+                    time = globals.RealTime(),
+                })
+                print("[CedaChat] " .. name .. ": " .. msg)
+            end
+        end
+
+        while #chat_messages > 12 do table.remove(chat_messages) end
+    end)
+end
+
+
+local function PollUserList()
+    if not chk_userlist:GetValue() then return end
+    if globals.RealTime() - GetPollTime("userlist") < 10 then return end
+    SetPollTime("userlist")
+
+    http.Get("https://cedapug.com/cedapug/php/get/onlineusers.php?source=game", function(body)
+        if not body or body == "" then return end
+        user_list = {}
+
+        for obj in body:gmatch('%{[^{}]+%}') do
+            local name = obj:match('"PersonaName":"([^"]+)"') or
+                         obj:match('"name":"([^"]+)"')
+            local mu   = tonumber(obj:match('"Mu":([%d%.]+)') or
+                                  obj:match('"mmr":([%d%.]+)') or "0")
+            if name then
+                table.insert(user_list, { name = name, mmr = mu })
+            end
+        end
+
+        table.sort(user_list, function(a, b) return a.mmr > b.mmr end)
+        print("[CedaPug] UserList: " .. #user_list .. " oyuncu")
+    end)
+end
+
+
+local function PollChatSpammer()
+    if not chk_chatspam:GetValue() then return end
+    local now = globals.RealTime()
+    if now - last_spam_time < spam_interval:GetValue() / 1000 then return end
+    last_spam_time = now
+
+    local msg = spam_msg:GetValue()
+    if not msg or msg == "" then return end
+    SendCedaChat(msg)
+end
+
+
+local function PollMapVotes()
+    if not chk_mapvotes:GetValue() then return end
+    if globals.RealTime() - GetPollTime("mapvotes") < 5 then return end
+    SetPollTime("mapvotes")
+
+    http.Get("https://cedapug.com/cedapug/php/get/mapvotes.php", function(body)
+        if not body or body == "" then return end
+        map_votes = {}
+
+        for map, votes in body:gmatch('"([^"]+)":(%d+)') do
+            if not map:find("success") and not map:find("time") and
+               not map:find("vote") and not map:find("error") then
+                table.insert(map_votes, { map = map, votes = tonumber(votes) or 0 })
+            end
+        end
+
+        table.sort(map_votes, function(a, b) return a.votes > b.votes end)
+    end)
+end
+
+
+local function PollStreamers()
+    if not chk_streamers:GetValue() then return end
+    if globals.RealTime() - GetPollTime("streamers") < 30 then return end
+    SetPollTime("streamers")
+
+    http.Get("https://cedapug.com/cedapug/php/get/streamers.php", function(body)
+        if not body or body == "" then return end
+        streamer_list = {}
+
+        
+        for user in body:gmatch('"KickUser":"([^"]+)"') do
+            
+            local is_live      = body:match('"KickUser":"' .. user .. '".-"is_live":(true)') ~= nil
+            local viewer_count = tonumber(body:match('"KickUser":"' .. user .. '".-"viewer_count":(%d+)') or "0")
+            local start_time   = body:match('"KickUser":"' .. user .. '".-"start_time":"([^"]+)"') or ""
+
+            if is_live then
+                table.insert(streamer_list, {
+                    user    = user,
+                    viewers = viewer_count,
+                    start   = start_time,
+                })
+            end
+        end
+
+        
+        table.sort(streamer_list, function(a, b) return a.viewers > b.viewers end)
+        print("[CedaPug] Streamers: " .. #streamer_list .. " live")
+    end)
+end
+
+
+local function PollQueueData()
+    if not chk_queueview:GetValue() and not chk_partyview:GetValue() then return end
+    if globals.RealTime() - GetPollTime("queue") < POLL_INTERVAL then return end
+    SetPollTime("queue")
+
+    http.Get("https://cedapug.com/cedapug/php/get/queues.php", function(body)
+        if not body or body == "" then return end
+        queue_data = {}
+
+        local all_players   = {}
+        local time_to_party = {}
+
+        for obj in body:gmatch('%{[^{}]+%}') do
+            local name  = obj:match('"PersonaName":"([^"]+)"')
+            local mu    = tonumber(obj:match('"Mu":([%d%.]+)') or "0")
+            local sigma = tonumber(obj:match('"Sigma":([%d%.]+)') or "8")
+            local ready = obj:match('"IsReady":(%d)') == "1"
+            local party = tonumber(obj:match('"PartyInfo":(%d+)') or "0")
+            local jtime = obj:match('"JoinedQueue":"([^"]+)"')
+
+            if name and jtime then
+                if party > 0 then
+                    time_to_party[jtime] = party
+                end
+                table.insert(all_players, {
+                    name  = DecodeUnicode(name),
+                    mmr   = CalcMMR(mu, sigma),
+                    ready = ready,
+                    party = party,
+                    jtime = jtime,
+                })
+            end
+        end
+
+        
+        for _, p in ipairs(all_players) do
+            if p.party == 0 and p.jtime and time_to_party[p.jtime] then
+                p.party = time_to_party[p.jtime]
+            end
+            table.insert(queue_data, p)
+        end
+
+        print("[CedaPug] Queue: " .. #queue_data .. " oyuncu")
+    end)
+end
+
+
+client.AllowListener("player_death")
+
+callbacks.Register("FireGameEvent", "ceda_killsay", function(event)
+    if not chk_killsay:GetValue() then return end
+    if event:GetName() ~= "player_death" then return end
+
+    local attacker_id = event:GetInt("attacker")
+    local victim_id   = event:GetInt("userid")
+    if attacker_id == 0 or attacker_id == victim_id then return end
+
+    local uid = GetMyUserID()
+    if not uid or attacker_id ~= uid then return end
+
+    local chosen = killsay_msg:GetValue()
+    if not chosen or chosen == "" then return end
+
+   
+    if chk_killsay:GetValue() then
+        client.ChatSay(chosen)
+    end
+
+    
+    if chk_cedakillsay:GetValue() then
+        SendCedaChat(chosen)
+    end
+end)
+
+
+callbacks.Register("Draw", "cedapug_draw", function()
+    local now = globals.RealTime()
+    local sw, sh = draw.GetScreenSize()
+
+    PollAutoJoin()
+    PollChatReader()
+    PollChatSpammer()
+    PollUserList()
+    PollQueueData()
+    PollStreamers()
+    PollMapVotes()
+
+ 
+    if chk_chatread:GetValue() and #chat_messages > 0 then
+        local w   = 340
+        local lh  = 15
+        local h   = 24 + #chat_messages * lh + 6
+        local x   = 10
+        local y   = sh - h - 10
+
+        DrawPanel(x, y, w, h, "CedaPug Chat", 100, 200, 255)
+
+        draw.SetFont(font_small)
+        local ty = y + 24
+        for _, m in ipairs(chat_messages) do
+            local age   = now - m.time
+            local alpha = age < 8 and 255 or math.max(60, math.floor(255 - (age - 8) * 20))
+            local nw, _ = draw.GetTextSize(m.name .. ": ")
+
+            draw.Color(0, 0, 0, math.floor(alpha * 0.7))
+            draw.Text(x + 7, ty + 1, m.name .. ": " .. m.msg)
+            draw.Color(100, 200, 255, alpha)
+            draw.Text(x + 6, ty, m.name .. ": ")
+            draw.Color(255, 255, 255, alpha)
+            draw.Text(x + 6 + nw, ty, m.msg)
+            ty = ty + lh
+        end
+    end
+
+   
+    if chk_userlist:GetValue() then
+        local w   = 230
+        local lh  = 15
+        local cnt = math.max(1, #user_list)
+        local h   = 24 + cnt * lh + 6
+        local x   = sw - w - 10
+        local y   = 10
+
+        DrawPanel(x, y, w, h, "Online (" .. #user_list .. ")", 255, 200, 50)
+        draw.SetFont(font_small)
+
+        if #user_list == 0 then
+            draw.Color(180, 180, 180, 200)
+            draw.Text(x + 6, y + 24, "Veri bekleniyor...")
+        else
+            local ty = y + 24
+            for _, u in ipairs(user_list) do
+                local mmr_str = string.format("%.1f", u.mmr)
+                local tw, _ = draw.GetTextSize(mmr_str)
+                draw.Color(255, 255, 255, 220)
+                draw.Text(x + 6, ty, u.name)
+                draw.Color(255, 200, 50, 220)
+                draw.Text(x + w - tw - 8, ty, mmr_str)
+                ty = ty + lh
+            end
+        end
+    end
+
+ 
+    if chk_queueview:GetValue() then
+        local w   = 230
+        local lh  = 15
+        local cnt = math.max(1, #queue_data)
+        local h   = 24 + cnt * lh + 6
+        local x   = sw - w - 10
+        local y   = chk_userlist:GetValue()
+                    and (10 + 24 + math.max(1, #user_list) * 15 + 6 + 8)
+                    or 10
+
+        DrawPanel(x, y, w, h, "Queue (" .. #queue_data .. ")", 100, 255, 150)
+        draw.SetFont(font_small)
+
+        if #queue_data == 0 then
+            draw.Color(180, 180, 180, 200)
+            draw.Text(x + 6, y + 24, "Veri bekleniyor...")
+        else
+            local ty = y + 24
+            for _, p in ipairs(queue_data) do
+                local mmr_str = p.mmr and tostring(p.mmr) or "?"
+                local tw, _ = draw.GetTextSize(mmr_str)
+
+                local pr, pg, pb = 255, 255, 255
+                if p.party > 0 then
+                    local hue = (p.party * 137) % 360
+                    pr = math.floor(128 + 127 * math.sin(math.rad(hue)))
+                    pg = math.floor(128 + 127 * math.sin(math.rad(hue + 120)))
+                    pb = math.floor(128 + 127 * math.sin(math.rad(hue + 240)))
+                end
+
+                local prefix = p.ready and "✓ " or "  "
+                draw.Color(pr, pg, pb, 220)
+                draw.Text(x + 6, ty, prefix .. p.name)
+                draw.Color(255, 200, 50, 200)
+                draw.Text(x + w - tw - 8, ty, mmr_str)
+                ty = ty + lh
+            end
+        end
+    end
+
+    
+    if chk_partyview:GetValue() and #queue_data > 0 then
+        local parties = {}
+        for _, p in ipairs(queue_data) do
+            if p.party > 0 then
+                if not parties[p.party] then parties[p.party] = {} end
+                table.insert(parties[p.party], p)
+            end
+        end
+
+        local x = 10
+        local y = chk_chatread:GetValue() and 10 or 10
+
+        for pid, members in pairs(parties) do
+            local w = 220
+            local h = 24 + #members * 15 + 6
+            DrawPanel(x, y, w, h, "Party #" .. pid, 255, 100, 200)
+            draw.SetFont(font_small)
+            local ty = y + 24
+            for _, m in ipairs(members) do
+                draw.Color(255, 255, 255, 220)
+                draw.Text(x + 6, ty, m.name)
+                ty = ty + 15
+            end
+            y = y + h + 6
+        end
+    end
+
+   
+    if chk_streamers:GetValue() then
+        local w   = 230
+        local lh  = 15
+        local cnt = math.max(1, #streamer_list)
+        local h   = 24 + cnt * lh + 6
+        local x   = sw - w - 10
+        local y   = 10
+
+       
+        if chk_userlist:GetValue() then
+            y = y + 24 + math.max(1, #user_list) * 15 + 6 + 8
+        end
+        if chk_queueview:GetValue() then
+            y = y + 24 + math.max(1, #queue_data) * 15 + 6 + 8
+        end
+
+        DrawPanel(x, y, w, h, "Live Streamers (" .. #streamer_list .. ")", 155, 100, 255)
+        draw.SetFont(font_small)
+
+        if #streamer_list == 0 then
+            draw.Color(180, 180, 180, 200)
+            draw.Text(x + 6, y + 24, "Yayın yok")
+        else
+            local ty = y + 24
+            for _, s in ipairs(streamer_list) do
+                local vc = tostring(s.viewers) .. " 👁"
+                local tw, _ = draw.GetTextSize(vc)
+
+              
+                local pulse = math.floor(globals.RealTime() * 2) % 2 == 0
+                draw.Color(pulse and 255 or 180, 50, 50, 220)
+                draw.FilledCircle(x + 10, ty + 5, 4)
+
+                draw.Color(255, 255, 255, 220)
+                draw.Text(x + 18, ty, s.user)
+                draw.Color(155, 100, 255, 220)
+                draw.Text(x + w - tw - 8, ty, vc)
+                ty = ty + lh
+            end
+        end
+    end
+
+   
+    if chk_autojoin:GetValue() then
+        draw.SetFont(font_main)
+        local txt = connected and " CONNECTED" or " Maç bekleniyor..."
+        local r = connected and 50  or 255
+        local g = connected and 255 or 200
+        local b = connected and 50  or 50
+        local tw, _ = draw.GetTextSize(txt)
+        draw.Color(0, 0, 0, 180)
+        draw.Text(sw/2 - tw/2 + 1, sh - 29, txt)
+        draw.Color(r, g, b, 255)
+        draw.Text(sw/2 - tw/2, sh - 30, txt)
+    end
+end)
+
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("Draw",          "cedapug_draw")
+    callbacks.Unregister("FireGameEvent", "ceda_killsay")
+    print("[CedaPug] Unloaded")
+end)
+
+
