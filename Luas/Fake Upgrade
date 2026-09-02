@@ -1,0 +1,33 @@
+local ref = gui.Reference("Misc", "General", "Extra")
+
+local laserBox     = gui.Checkbox(ref, "upgrade_laser", "Fake Laser", false)
+local incenBox     = gui.Checkbox(ref, "upgrade_incen", "Fake Incendiary", false)
+local expBox       = gui.Checkbox(ref, "upgrade_exp", "Fake Explosive", false)
+
+callbacks.Register("Draw", "l4d2_fake_upgrades", function()
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then return end
+
+  
+    local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
+    if not pWeapon then return end
+
+    local bitmask = 0
+
+    if incenBox:GetValue() then
+        bitmask = bitmask + 1
+    end
+
+    if expBox:GetValue() then
+        bitmask = bitmask + 2
+    end
+
+    if laserBox:GetValue() then
+        bitmask = bitmask + 4
+    end
+
+   
+    if bitmask > 0 then
+        pWeapon:SetPropInt(bitmask, "m_upgradeBitVec")
+    end
+end)
