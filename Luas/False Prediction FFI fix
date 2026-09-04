@@ -1,0 +1,56 @@
+
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+        int VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+    ]]
+end)
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local CREATEMOVE_INDEX       = 27
+local CMD_BUTTONS            = 0x24
+local IN_SPEED               = bit.lshift(1, 17)
+
+local GC = { original = nil, hook_fn = nil, slot_ptr = nil }
+
+local cm_sig    = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+local global_addr = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+local pClientMode = ffi.cast("uintptr_t*", global_addr)[0]
+local vtable_addr = ffi.cast("uintptr_t*", pClientMode)[0]
+local slot_ptr    = ffi.cast("uintptr_t*", vtable_addr + CREATEMOVE_INDEX * 4)
+
+GC.slot_ptr = slot_ptr
+GC.original = slot_ptr[0]
+
+local cm_t = ffi.typeof("bool(__fastcall*)(void*, void*, float, void*)")
+
+local function Hooked_CreateMove(ecx, edx, flInputSampleTime, cmd)
+    local result = ffi.cast(cm_t, GC.original)(ecx, edx, flInputSampleTime, cmd)
+    if cmd ~= nil then
+        local btn = ffi.cast("int32_t*", ffi.cast("uintptr_t", cmd) + CMD_BUTTONS)
+        if input.IsButtonDown(16) then
+            btn[0] = bit.bor(btn[0], IN_SPEED)
+        else
+            btn[0] = bit.band(btn[0], bit.bxor(btn[0], IN_SPEED))
+        end
+    end
+    return result
+end
+
+GC.hook_fn = ffi.cast(cm_t, Hooked_CreateMove)
+
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 8, PAGE_EXECUTE_READWRITE, old)
+slot_ptr[0] = ffi.cast("uintptr_t", GC.hook_fn)
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 8, old[0], old)
+
+callbacks.Register("Unload", function()
+    if GC.original and GC.slot_ptr then
+        pcall(function()
+            local o = ffi.new("uint32_t[1]")
+            ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 8, PAGE_EXECUTE_READWRITE, o)
+            GC.slot_ptr[0] = ffi.cast("uintptr_t", GC.original)
+            ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 8, o[0], o)
+        end)
+    end
+end)
