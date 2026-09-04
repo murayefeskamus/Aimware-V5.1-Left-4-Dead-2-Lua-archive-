@@ -1,0 +1,31 @@
+local mountYaw = nil
+
+callbacks.Register("CreateMove", function(cmd)
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+    if lp:GetTeamNumber() ~= 3 then return end
+    if lp:GetPropInt("m_zombieClass") ~= 5 then return end
+    local v = lp:GetPropInt("m_jockeyVictim")
+    if not v or v == -1 or v == 0 then
+        mountYaw = nil
+        return
+    end
+
+    if mountYaw == nil then
+        mountYaw = cmd.viewangles.y
+        return
+    end
+
+    local drift = cmd.viewangles.y - mountYaw
+    while drift >  180 do drift = drift - 360 end
+    while drift < -180 do drift = drift + 360 end
+
+    local rad = math.rad(drift)
+    local cos = math.cos(rad)
+    local sin = math.sin(rad)
+    local f = cmd.forwardmove
+    local s = cmd.sidemove
+
+    cmd.forwardmove = -(f * cos + s * sin)
+    cmd.sidemove    =  (s * cos - f * sin)
+end)
