@@ -1,0 +1,39 @@
+local ref    = gui.Reference("Aimbot", "General")
+local group  = gui.Groupbox(ref, "Auto Ceiling", 16, 16, 220, 0)
+
+local enable = gui.Checkbox(group, "ceil.enable", "Enable", false)
+local keybox = gui.Keybox(group,   "ceil.key",    "Key",    6)
+local mode   = gui.Combobox(group, "ceil.mode",   "Mode",   "Hold", "Toggle")
+
+local LOCKED_PITCH = 12.09
+local toggled      = false
+local prev_down    = false
+
+callbacks.Register("CreateMove", function(cmd)
+    if not cmd then return end
+    if not enable:GetValue() then toggled = false; return end
+
+    local key  = keybox:GetValue()
+    local down = input.IsButtonDown(key)
+    local m    = mode:GetValue()
+
+    local active = false
+    if m == 0 then
+        active = down
+    else
+        if down and not prev_down then toggled = not toggled end
+        active = toggled
+    end
+    prev_down = down
+
+    if not active then return end
+
+    cmd.viewangles.x = LOCKED_PITCH
+    local ang = engine.GetViewAngles()
+    ang.x = LOCKED_PITCH
+    engine.SetViewAngles(ang)
+end)
+
+callbacks.Register("Unload", function()
+    toggled = false
+end)
