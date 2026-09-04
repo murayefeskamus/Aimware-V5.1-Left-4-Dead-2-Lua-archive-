@@ -1,0 +1,21 @@
+local bypass = gui.Reference("Misc", "bypassclient")
+local saved = false
+local prev = false
+
+callbacks.Register("CreateMove", function(cmd)
+    local lp = entities.GetLocalPlayer()
+    local j = lp ~= nil
+              and lp:GetTeamNumber() == 3
+              and lp:GetPropInt("m_zombieClass") == 5
+
+    if j == prev then return end
+
+    if j then
+        saved = bypass:GetValue()
+        bypass:SetValue(false)
+    else
+        bypass:SetValue(saved)
+    end
+
+    prev = j
+end)
