@@ -1,0 +1,52 @@
+T1 only 
+
+
+local ref      = gui.Reference("Misc", "General", "Extra")
+local shoveBox = gui.Checkbox(ref, "shotgunshove.enabled", "Shotgun Shove", false)
+
+local IN_ATTACK  = 1
+local IN_ATTACK2 = 2048
+
+local wasAttacking = false
+local shoveNext    = false
+
+local SHOTGUNS = {
+    ["Shotgun Chrome"] = true,
+    ["Pumpshotgun"]   = true,
+}
+
+callbacks.Register("CreateMove", "shotgunshove", function(cmd)
+    if not shoveBox:GetValue() then return end
+
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then
+        wasAttacking = false
+        shoveNext    = false
+        return
+    end
+
+    local weapon = pLocal:GetPropEntity("m_hActiveWeapon")
+    if not weapon or not SHOTGUNS[weapon:GetName()] then
+        wasAttacking = false
+        shoveNext    = false
+        return
+    end
+
+    local buttons   = cmd:GetButtons()
+    local attacking = bit.band(buttons, IN_ATTACK) ~= 0
+
+    if shoveNext then
+        cmd:SetButtons(bit.bor(buttons, IN_ATTACK2))
+        shoveNext = false
+    end
+
+    if attacking and not wasAttacking then
+        shoveNext = true
+    end
+
+    wasAttacking = attacking
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("CreateMove", "shotgunshove")
+end)
