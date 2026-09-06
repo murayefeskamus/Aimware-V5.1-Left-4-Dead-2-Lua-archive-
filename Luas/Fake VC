@@ -1,0 +1,72 @@
+Voice Status hook
+
+
+
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+        void* GetProcAddress(void* module, const char* name);
+    ]]
+end)
+
+local clientDll = ffi.C.GetModuleHandleA("client.dll")
+local createInterface = ffi.cast(
+    "void*(__cdecl*)(const char*, int*)",
+    ffi.C.GetProcAddress(clientDll, "CreateInterface")
+)
+
+local baseClient = nil
+for _, v in ipairs({"VClient017", "VClient016", "VClient015"}) do
+    local ptr = createInterface(v, nil)
+    if ptr and ffi.cast("uintptr_t", ptr) ~= 0 then
+        baseClient = ptr
+        print("[VoiceStatus] Interface:", v)
+        break
+    end
+end
+
+if not baseClient then
+    print("[VoiceStatus] IBaseClientDLL alinamadi")
+    return
+end
+
+local vtable    = ffi.cast("uintptr_t**", baseClient)[0]
+local voiceFn   = ffi.cast("void(__thiscall*)(void*, int, int, int)", vtable[32])
+
+local ref       = gui.Reference("Misc", "General", "Extra")
+local allBox    = gui.Checkbox(ref, "voice.all",  "Voice - Herkes",       false)
+local teamBox   = gui.Checkbox(ref, "voice.team", "Voice - Takımım",      false)
+local enemyBox  = gui.Checkbox(ref, "voice.enemy","Voice - Karşı Takım",  false)
+
+local function ApplyVoice()
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal then return end
+    local localTeam = pLocal:GetTeamNumber()
+
+    for i = 1, globals.MaxClients() do
+        local ent = entities.GetByIndex(i)
+        if ent and not ent:IsDormant() then
+            local talking = false
+
+            if allBox:GetValue() then
+                talking = true
+            elseif teamBox:GetValue() and ent:GetTeamNumber() == localTeam then
+                talking = true
+            elseif enemyBox:GetValue() and ent:GetTeamNumber() ~= localTeam then
+                talking = true
+            end
+
+            pcall(voiceFn, baseClient, i, 0, talking and 1 or 0)
+        end
+    end
+end
+
+callbacks.Register("Draw", "voicestatus", ApplyVoice)
+
+callbacks.Register("Unload", function()
+    for i = 1, globals.MaxClients() do
+        pcall(voiceFn, baseClient, i, 0, 0)
+    end
+    callbacks.Unregister("Draw", "voicestatus")
+end)
+
