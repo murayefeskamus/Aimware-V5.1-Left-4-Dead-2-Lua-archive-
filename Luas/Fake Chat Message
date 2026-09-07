@@ -1,0 +1,61 @@
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+    ]]
+end)
+
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if not cm_sig then print("sig bulunamadi") return end
+
+local function GetCHudChat()
+    local ok, result = pcall(function()
+        local global_addr = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+        if global_addr == 0 then return nil end
+        local clientmode = ffi.cast("uintptr_t*", global_addr)[0]
+        if clientmode == 0 then return nil end
+        local chudchat = ffi.cast("uintptr_t*", clientmode + 0x18)[0]
+        if chudchat == 0 then return nil end
+        return chudchat
+    end)
+    if not ok or result == nil then return nil end
+    return result
+end
+
+local function ChatPrintf(idx, msg)
+    local chudchat = GetCHudChat()
+    if not chudchat then return end
+    pcall(function()
+        local vtable = ffi.cast("uintptr_t**", chudchat)[0]
+        local fn     = ffi.cast("void(__stdcall*)(void*, int, int, const char*)", vtable[23])
+        fn(ffi.cast("void*", chudchat), idx, 0, msg)
+    end)
+end
+
+local ref     = gui.Reference("Misc", "General", "Extra")
+local nameBox = gui.Editbox(ref, "fakechat.name", "Nick")
+local msgBox  = gui.Editbox(ref, "fakechat.msg",  "Mesaj")
+local sendKey = gui.Keybox(ref,  "fakechat.key",  "Gönder", 0)
+local teamBox = gui.Checkbox(ref, "fakechat.team", "Team Chat", false)
+
+local wasDown = false
+
+callbacks.Register("Draw", "fakechat", function()
+    local key = sendKey:GetValue()
+    if key == 0 then return end
+
+    local down = input.IsButtonDown(key)
+    if not down then wasDown = false return end
+    if wasDown then return end
+    wasDown = true
+
+    local name   = nameBox:GetValue()
+    local msg    = msgBox:GetValue()
+    local prefix = teamBox:GetValue() and "\x05" or "\x03"
+
+    ChatPrintf(0, string.format("%s%s\x01: %s", prefix, name, msg))
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("Draw", "fakechat")
+end)
+
