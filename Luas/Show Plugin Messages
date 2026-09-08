@@ -1,0 +1,136 @@
+
+d be crash bcuz of trampoline idfk it worked for me basically it prints plugin messages in server to ur client so u can be able to see anti cheat triggers etc
+
+
+
+pcall(function() ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+    void* VirtualAlloc(void* lpAddress, size_t dwSize, uint32_t flAllocationType, uint32_t flProtect);
+    void* memcpy(void* dst, const void* src, size_t n);
+]] end)
+
+local engineBase = ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("engine.dll"))
+
+local GC = {}
+
+local function WriteHook(target, dest, size)
+    local old = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", target), size, 0x40, old)
+    local ptr = ffi.cast("uint8_t*", target)
+    ptr[0] = 0x68
+    ffi.cast("uint32_t*", ptr + 1)[0] = ffi.cast("uint32_t", dest)
+    ptr[5] = 0xC3
+    ffi.C.VirtualProtect(ffi.cast("void*", target), size, old[0], old)
+end
+
+local function RestoreBytes(target, trampoline, size)
+    local old = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", target), size, 0x40, old)
+    ffi.C.memcpy(ffi.cast("void*", target), trampoline, size)
+    ffi.C.VirtualProtect(ffi.cast("void*", target), size, old[0], old)
+end
+
+local function CreateTrampoline(src, size)
+    local t = ffi.C.VirtualAlloc(nil, 64, 0x3000, 0x40)
+    if t == nil then
+        print("[ERR] VirtualAlloc failed")
+        return nil
+    end
+    ffi.C.memcpy(t, ffi.cast("const void*", src), size)
+    local jmp = ffi.cast("uint8_t*", t) + size
+    jmp[0] = 0x68
+    ffi.cast("uint32_t*", jmp + 1)[0] = ffi.cast("uint32_t", src + size)
+    jmp[5] = 0xC3
+    return t
+end
+
+local PrintAddr = engineBase + 0x1D1B10
+local Print_t   = ffi.typeof("char(__fastcall*)(void*, void*)")
+
+local PrintTramp = CreateTrampoline(PrintAddr, 6)
+if not PrintTramp then return end
+GC.orig_print = ffi.cast(Print_t, PrintTramp)
+
+local function Hooked_Print(ecx, edx)
+    local ok, txt = pcall(function()
+        local p = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", ecx) + 0x54)[0]
+        if p ~= 0 then return ffi.string(ffi.cast("const char*", p)) end
+        return nil
+    end)
+    if ok and txt then
+        local msg = txt:gsub("[\r\n]", "")
+        if #msg > 0 then
+            print(string.format("[SVC_Print] %s", msg))
+        end
+    end
+    return GC.orig_print(ecx, edx)
+end
+
+GC.hook_print = ffi.cast(Print_t, Hooked_Print)
+WriteHook(PrintAddr, ffi.cast("uintptr_t", GC.hook_print), 6)
+
+
+local UMsgAddr = engineBase + 0x1EC1D0
+local UMsg_t   = ffi.typeof("char(__fastcall*)(void*, void*)")
+
+local UMsgTramp = CreateTrampoline(UMsgAddr, 6)
+if not UMsgTramp then return end
+GC.orig_umsg = ffi.cast(UMsg_t, UMsgTramp)
+
+local UM_NAMES = {
+    [1]="Geiger",[2]="Train",[3]="HudText",[4]="SayText",[5]="SayText2",
+    [6]="TextMsg",[7]="HudMsg",[8]="ResetHUD",[9]="GameTitle",[10]="ItemPickup",
+    [11]="ShowMenu",[12]="Shake",[13]="Fade",[14]="VGUIMenu",[15]="Rumble",
+    [16]="CloseCaption",[17]="SendAudio",[18]="RawAudio",[19]="VoiceMask",
+    [20]="RequestState",[21]="BarTime",[22]="Damage",[23]="RadioText",
+    [24]="HintText",[25]="KeyHintText",[26]="ReloadEffect",[27]="PlayerAnimEvent",
+}
+
+local function Hooked_UMsg(ecx, edx)
+    local ok, typeid = pcall(function()
+        return ffi.cast("int32_t*", ffi.cast("uintptr_t", ecx) + 0x54)[0]
+    end)
+    if ok then
+        local name = UM_NAMES[typeid] or ("type_" .. tostring(typeid))
+        print(string.format("[SVC_UserMessage] type=%d (%s)", typeid, name))
+    end
+    return GC.orig_umsg(ecx, edx)
+end
+
+GC.hook_umsg = ffi.cast(UMsg_t, Hooked_UMsg)
+WriteHook(UMsgAddr, ffi.cast("uintptr_t", GC.hook_umsg), 6)
+
+
+local CVarAddr = engineBase + 0x15DC50
+local CVarFn_t = ffi.typeof("char(__fastcall*)(void*, void*)")
+
+local CVarTramp = CreateTrampoline(CVarAddr, 6)
+if not CVarTramp then return end
+GC.orig_cvar = ffi.cast(CVarFn_t, CVarTramp)
+
+local function Hooked_CVar(ecx, edx)
+    local ok, name, cookie = pcall(function()
+        local base    = ffi.cast("uintptr_t", ecx)
+        local nameptr = ffi.cast("uintptr_t*", base + 0x54)[0]
+        if nameptr ~= 0 then
+            return ffi.string(ffi.cast("const char*", nameptr)),
+                   ffi.cast("int32_t*", base + 0x58)[0]
+        end
+    end)
+    if ok and name then
+        print(string.format("[SVC_GetCvarValue] cvar='%s' cookie=%d", name, cookie))
+    end
+    return GC.orig_cvar(ecx, edx)
+end
+
+GC.hook_cvar = ffi.cast(CVarFn_t, Hooked_CVar)
+WriteHook(CVarAddr, ffi.cast("uintptr_t", GC.hook_cvar), 6)
+
+
+callbacks.Register("Unload", function()
+    if PrintTramp then RestoreBytes(PrintAddr, PrintTramp, 6) end
+    if UMsgTramp  then RestoreBytes(UMsgAddr,  UMsgTramp,  6) end
+    if CVarTramp  then RestoreBytes(CVarAddr,  CVarTramp,  6) end
+    print("[SVC Hooks] Kaldirildi")
+end)
