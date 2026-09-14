@@ -1,0 +1,98 @@
+hold m1 shit for legitbot 
+
+
+
+local SNIPERS = {
+    ["CSniperRifle"]    = true,   
+    ["CSniperMilitary"] = true,   
+    ["CAWP"]            = true,   
+    ["CScout"]          = true,   
+}
+
+
+local function IsSniper(cls)
+    if cls == nil then return false end
+    if SNIPERS[cls] then return true end
+    if string.find(cls, "Sniper") then return true end
+    if string.find(cls, "AWP")    then return true end
+    if string.find(cls, "Scout")  then return true end
+    return false
+end
+
+
+local ref = gui.Reference("Misc")
+local box = gui.Groupbox(ref, "Auto Sniper", 16, 16, 260, 0)
+local chk  = gui.Checkbox(box, "as.en",   "Aktif", true)
+local rate = gui.Slider  (box, "as.rate", "Refire orani (tick)", 1, 1, 6)
+local dbg  = gui.Checkbox(box, "as.dbg",  "Debug log", false)
+
+local tick = 0
+
+
+local function GetActiveWeapon(ply)
+    local ok, wep = pcall(function()
+        return ply:GetPropEntity("m_hActiveWeapon")
+    end)
+    if ok and wep ~= nil then return wep end
+
+  
+    local ok2, h = pcall(function()
+        return ply:GetProp("m_hActiveWeapon")
+    end)
+    if ok2 and type(h) == "number" and h ~= 0 and h ~= -1 then
+        return entities.GetByIndex(h % 2048)
+    end
+    return nil
+end
+
+local function GetClassSafe(ent)
+    if ent == nil then return nil end
+    local ok, cls = pcall(function()
+        local c = ent:GetClass()
+        return c
+    end)
+    if not ok then return nil end
+    return cls
+end
+
+callbacks.Register("CreateMove", "autosniper_v6", function(cmd)
+    if not cmd then return end
+    if not chk:GetValue() then return end
+
+   
+    if not input.IsButtonDown(1) then
+        tick = 0
+        return
+    end
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local wep = GetActiveWeapon(me)
+    if not wep then return end
+
+    local cls = GetClassSafe(wep)
+    if not IsSniper(cls) then return end
+
+  
+    local step = rate:GetValue()
+    tick = tick + 1
+
+    local before = cmd.buttons or 0
+    local after
+    if tick % (step * 2) < step then
+        after = bit.bor(before, 1)                 
+    else
+        after = bit.band(before, bit.bnot(1))      
+    end
+
+    cmd.buttons = after
+
+   
+    if dbg:GetValue() and tick == 1 then
+        print("[AutoSniper] class=" .. tostring(cls) ..
+              " before=" .. tostring(before) ..
+              " after="  .. tostring(after) ..
+              " cmd.buttons_ok=" .. tostring(cmd.buttons == after))
+    end
+end)
