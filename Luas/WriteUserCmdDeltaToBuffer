@@ -1,0 +1,98 @@
+Its hook xample bcuz i got bored 
+
+
+
+
+pcall(function()
+    ffi.cdef[[
+        void* GetModuleHandleA(const char* lpModuleName);
+        void* GetProcAddress(void* module, const char* name);
+    ]]
+end)
+
+local clientDll = ffi.C.GetModuleHandleA("client.dll")
+local createInterface = ffi.cast(
+    "void*(__cdecl*)(const char*, int*)",
+    ffi.C.GetProcAddress(clientDll, "CreateInterface")
+)
+
+local baseClient = nil
+for _, v in ipairs({"VClient018", "VClient017", "VClient016"}) do
+    local ptr = createInterface(v, nil)
+    if ptr and ffi.cast("uintptr_t", ptr) ~= 0 then
+        baseClient = ptr
+        print("[WUD] Interface:", v)
+        break
+    end
+end
+
+if not baseClient then
+    print("[WUD] baseClient alinamadi")
+    return
+end
+
+local vtable = ffi.cast("uintptr_t**", baseClient)[0]
+local origFn = ffi.cast(
+    "bool(__thiscall*)(void*, int, void*, int, int, bool)",
+    vtable[22]
+)
+
+local frameCount  = 0
+local chokeCount  = 0
+local CHOKE_MAX   = 14
+local LOG_EVERY   = 60
+local prevSeq     = -1
+local totalSent   = 0
+local totalChoked = 0
+
+callbacks.Register("Draw", "wud_demo", function()
+    frameCount = frameCount + 1
+    local seq  = globals.TickCount()
+    local buf  = ffi.new("uint8_t[512]")
+
+  
+    if prevSeq ~= -1 and seq - prevSeq > 15 then
+        print(string.format("[WUD] Atlama: prevSeq=%d seq=%d fark=%d",
+            prevSeq, seq, seq - prevSeq))
+    end
+
+    
+    chokeCount = chokeCount + 1
+    local shouldSend = (chokeCount > CHOKE_MAX)
+    if shouldSend then chokeCount = 0 end
+
+    if not shouldSend then
+        totalChoked = totalChoked + 1
+
+        if frameCount % LOG_EVERY == 0 then
+            print(string.format(
+                "[WUD] CHOKED seq=%d | sent=%d choked=%d vtable=0x%X",
+                seq, totalSent, totalChoked, vtable[22]
+            ))
+        end
+      
+        return
+    end
+
+   
+    local ok, result = pcall(origFn, baseClient, 0, buf, prevSeq, seq, true)
+
+    if ok then
+        totalSent = totalSent + 1
+        local cmdCount = (prevSeq == -1) and 1 or (seq - prevSeq)
+
+        if frameCount % LOG_EVERY == 0 then
+            print(string.format(
+                "[WUD] SENT seq=%d cmds_in_packet=%d result=%s | sent=%d choked=%d",
+                seq, cmdCount, tostring(result), totalSent, totalChoked
+            ))
+        end
+
+        prevSeq = seq  
+    end
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("Draw", "wud_demo")
+    print(string.format("[WUD] Unload — sent=%d choked=%d", totalSent, totalChoked))
+end)
