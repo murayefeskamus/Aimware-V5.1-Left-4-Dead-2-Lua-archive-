@@ -1,0 +1,64 @@
+pcall(function() ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* module, const char* name);
+    int   VirtualProtect(void* addr, size_t size, uint32_t protect, uint32_t* old);
+]] end)
+
+local clientDll = ffi.C.GetModuleHandleA("client.dll")
+local createInterface = ffi.cast(
+    "void*(__cdecl*)(const char*, int*)",
+    ffi.C.GetProcAddress(clientDll, "CreateInterface"))
+
+local baseClient = nil
+for _, v in ipairs({"VClient017", "VClient016", "VClient015"}) do
+    local ptr = createInterface(v, nil)
+    if ptr and ffi.cast("uintptr_t", ptr) ~= 0 then
+        baseClient = ptr
+        print("[HookDemo] Interface: " .. v)
+        break
+    end
+end
+if not baseClient then print("[HookDemo] baseClient alinamadi") return end
+
+local vtable = ffi.cast("uintptr_t**", baseClient)[0]
+
+
+local SLOT_RENDERVIEW = 26
+
+local RenderView_t = ffi.typeof("void(__thiscall*)(void*, void*, int, int)")
+
+
+local pOriginalRenderView = ffi.cast(RenderView_t, vtable[SLOT_RENDERVIEW])
+
+local nFrameCount = 0
+
+
+local function HookedRenderView(this, view, nClearFlags, whatToDraw)
+    -- ONCE orijinali cagir, oyun normal render etsin.
+    pOriginalRenderView(this, view, nClearFlags, whatToDraw)
+
+    
+    nFrameCount = nFrameCount + 1
+    if nFrameCount % 100 == 0 then
+        print(string.format("[HookDemo] RenderView calisti - frame #%d", nFrameCount))
+    end
+end
+
+local cHookedRenderView = ffi.cast(RenderView_t, HookedRenderView)
+
+local pVtableSlot = ffi.cast("uintptr_t*", vtable + SLOT_RENDERVIEW)
+local oldProtect = ffi.new("uint32_t[1]")
+
+
+ffi.C.VirtualProtect(pVtableSlot, ffi.sizeof("uintptr_t"), 0x40, oldProtect)
+pVtableSlot[0] = ffi.cast("uintptr_t", cHookedRenderView)
+ffi.C.VirtualProtect(pVtableSlot, ffi.sizeof("uintptr_t"), oldProtect[0], oldProtect)
+
+print("[HookDemo] RenderView hook kuruldu")
+
+callbacks.Register("Unload", function()
+    ffi.C.VirtualProtect(pVtableSlot, ffi.sizeof("uintptr_t"), 0x40, oldProtect)
+    pVtableSlot[0] = ffi.cast("uintptr_t", pOriginalRenderView)
+    ffi.C.VirtualProtect(pVtableSlot, ffi.sizeof("uintptr_t"), oldProtect[0], oldProtect)
+    print("[HookDemo] RenderView hook kaldirildi")
+end)
