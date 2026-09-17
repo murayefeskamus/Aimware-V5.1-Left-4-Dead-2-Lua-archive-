@@ -1,0 +1,108 @@
+DME is bad for chams but its still fixable so np
+
+local ref    = gui.Reference("Misc", "General", "Extra")
+local enable = gui.Checkbox(ref, "ffi.chams.on", "XQZ Chams", false)
+local col_r  = gui.Slider(ref, "ffi.chams.r", "Chams R", 255, 0, 255, 1)
+local col_g  = gui.Slider(ref, "ffi.chams.g", "Chams G",  80, 0, 255, 1)
+local col_b  = gui.Slider(ref, "ffi.chams.b", "Chams B",  80, 0, 255, 1)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, unsigned long flNewProtect, unsigned long* lpflOldProtect);
+]]
+
+local function GetInterface(dll, name)
+    local mod = ffi.C.GetModuleHandleA(dll)
+    if mod == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)",
+        ffi.C.GetProcAddress(mod, "CreateInterface"))
+    return ci(name, nil)
+end
+
+local model_render = GetInterface("engine.dll", "VEngineModel016")
+if not model_render then print("[Chams] model_render yok") return end
+
+local mat_sys = GetInterface("materialsystem.dll", "VMaterialSystem080")
+if not mat_sys then print("[Chams] mat_sys yok") return end
+
+
+local mat = ffi.cast("void*(__thiscall*)(void*, const char*, const char*, int, const char*)",
+    ffi.cast("uintptr_t**", mat_sys)[0][71])(mat_sys, "debug/debugambientcube", "Model textures", 0, nil)
+
+if mat == nil or ffi.cast("uintptr_t", mat) == 0 then print("[Chams] mat yok") return end
+
+
+ffi.cast("void(__thiscall*)(void*)", ffi.cast("uintptr_t**", mat)[0][12])(mat)
+
+
+local set_flag  = ffi.cast("void(__thiscall*)(void*, int, int)",            ffi.cast("uintptr_t**", mat)[0][29])
+local set_color = ffi.cast("void(__thiscall*)(void*, float, float, float)", ffi.cast("uintptr_t**", mat)[0][28])
+local override  = ffi.cast("void(__thiscall*)(void*, void*, int)",          ffi.cast("uintptr_t**", model_render)[0][1])
+
+local IGNOREZ = bit.lshift(1, 15); local ZNEARER = bit.lshift(1, 10)
+local NOCULL  = bit.lshift(1, 13); local NOFOG   = bit.lshift(1, 14)
+
+
+local DME_t    = ffi.typeof("void(__fastcall*)(void*, void*, void*, void*, void*)")
+local vtable   = ffi.cast("uintptr_t**", model_render)[0]
+local slot_ptr = vtable + 19
+local orig     = slot_ptr[0]
+local GC       = {}
+local dbg_cnt  = 0
+
+print("[Chams] DrawModelExecute orig @ " .. tostring(orig))
+
+local function Hooked_DME(ecx, edx, state, info, btw)
+    if not enable:GetValue() then
+        ffi.cast(DME_t, orig)(ecx, edx, state, info, btw)
+        return
+    end
+
+    dbg_cnt = dbg_cnt + 1
+    if dbg_cnt <= 3 then print("[Chams] Hook calisti! cnt=" .. dbg_cnt) end
+
+  
+    local eidx = ffi.cast("int*", ffi.cast("uintptr_t", info) + 48)[0]
+
+   
+    if eidx < 1 or eidx > 32 then
+        ffi.cast(DME_t, orig)(ecx, edx, state, info, btw)
+        return
+    end
+
+    local r = col_r:GetValue() / 255.0
+    local g = col_g:GetValue() / 255.0
+    local b = col_b:GetValue() / 255.0
+
+   
+    set_flag(mat, IGNOREZ, 1); set_flag(mat, ZNEARER, 1)
+    set_flag(mat, NOCULL, 1);  set_flag(mat, NOFOG, 1)
+    set_color(mat, r * 0.4, g * 0.4, b * 0.4)
+    override(model_render, mat, 0)
+    ffi.cast(DME_t, orig)(ecx, edx, state, info, btw)
+    override(model_render, nil, 0)
+
+   
+    set_flag(mat, IGNOREZ, 0)
+    set_color(mat, r, g, b)
+    override(model_render, mat, 0)
+    ffi.cast(DME_t, orig)(ecx, edx, state, info, btw)
+    override(model_render, nil, 0)
+end
+
+GC.fn = ffi.cast(DME_t, Hooked_DME)
+
+local old = ffi.new("unsigned long[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, 0x40, old)
+slot_ptr[0] = ffi.cast("uintptr_t", GC.fn)
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, old[0], old)
+
+callbacks.Register("Unload", "ffichams", function()
+    local old2 = ffi.new("unsigned long[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, 0x40, old2)
+    slot_ptr[0] = orig
+    ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, old2[0], old2)
+    override(model_render, nil, 0)
+    print("[Chams] Temizlendi")
+end)
