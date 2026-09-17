@@ -1,0 +1,141 @@
+ez
+
+
+
+
+local ref    = gui.Reference("Misc", "General", "Extra")
+local enable = gui.Checkbox(ref, "ffi.chams.on", "XQZ Chams", false)
+local mat_cb = gui.Combobox(ref, "ffi.chams.mat", "Material",
+    "Shaded",      
+    "Metallic",    
+    "Flat",        
+    "Wireframe2"   
+)
+local col_r = gui.Slider(ref, "ffi.chams.r", "Chams R", 255, 0, 255, 1)
+local col_g = gui.Slider(ref, "ffi.chams.g", "Chams G",  80, 0, 255, 1)
+local col_b = gui.Slider(ref, "ffi.chams.b", "Chams B",  80, 0, 255, 1)
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, unsigned long flNewProtect, unsigned long* lpflOldProtect);
+]]
+
+local function GetInterface(dll, name)
+    local mod = ffi.C.GetModuleHandleA(dll)
+    if mod == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)",
+        ffi.C.GetProcAddress(mod, "CreateInterface"))
+    return ci(name, nil)
+end
+
+local model_render = GetInterface("engine.dll", "VEngineModel016")
+if not model_render then print("[Chams] model_render yok") return end
+
+local mat_sys = GetInterface("materialsystem.dll", "VMaterialSystem080")
+if not mat_sys then print("[Chams] mat_sys yok") return end
+
+local MAT_PATHS = {
+    [0] = "debug/debugambientcube",
+    [1] = "//platform/materials/debug/env_cubemap_model",
+    [2] = "debug/debugtranslucentsinglecolor",
+    [3] = "//platform/materials/debug/debugmrmnormals",
+}
+
+local find_mat = ffi.cast("void*(__thiscall*)(void*, const char*, const char*, int, const char*)",
+    ffi.cast("uintptr_t**", mat_sys)[0][71])
+
+
+local mat_cache = {}
+for i = 0, 3 do
+    local m = find_mat(mat_sys, MAT_PATHS[i], "Model textures", 0, nil)
+    if m and ffi.cast("uintptr_t", m) ~= 0 then
+        ffi.cast("void(__thiscall*)(void*)", ffi.cast("uintptr_t**", m)[0][12])(m)
+        mat_cache[i] = m
+        print("[Chams] Mat[" .. i .. "] OK: " .. MAT_PATHS[i])
+    end
+end
+
+
+local sf_fns = {}
+local sc_fns = {}
+for i = 0, 3 do
+    local m = mat_cache[i]
+    if m then
+        sf_fns[i] = ffi.cast("void(__thiscall*)(void*, int, int)",
+            ffi.cast("uintptr_t**", m)[0][29])
+        sc_fns[i] = ffi.cast("void(__thiscall*)(void*, float, float, float)",
+            ffi.cast("uintptr_t**", m)[0][28])
+    end
+end
+
+
+local ov_fn = ffi.cast("void(__thiscall*)(void*, void*, int)",
+    ffi.cast("uintptr_t**", model_render)[0][1])
+
+local IGNOREZ = bit.lshift(1, 15); local ZNEARER = bit.lshift(1, 10)
+local NOCULL  = bit.lshift(1, 13); local NOFOG   = bit.lshift(1, 14)
+
+
+local DME_t    = ffi.typeof("void(__fastcall*)(void*, void*, void*, void*, void*)")
+local slot_ptr = ffi.cast("uintptr_t**", model_render)[0] + 19
+local orig     = slot_ptr[0]
+local GC       = {}
+
+local function Hooked_DME(ecx, edx, state, info, btw)
+    if not enable:GetValue() then
+        ffi.cast(DME_t, orig)(ecx, edx, state, info, btw)
+        return
+    end
+
+    local eidx = ffi.cast("int*", ffi.cast("uintptr_t", info) + 48)[0]
+    if eidx < 1 or eidx > 32 then
+        ffi.cast(DME_t, orig)(ecx, edx, state, info, btw)
+        return
+    end
+
+    local idx = mat_cb:GetValue()
+    local mat = mat_cache[idx]
+    local sf  = sf_fns[idx]
+    local sc  = sc_fns[idx]
+
+    if not mat or not sf then
+        ffi.cast(DME_t, orig)(ecx, edx, state, info, btw)
+        return
+    end
+
+    local r = col_r:GetValue() / 255.0
+    local g = col_g:GetValue() / 255.0
+    local b = col_b:GetValue() / 255.0
+
+   
+    sf(mat, IGNOREZ, 1); sf(mat, ZNEARER, 1); sf(mat, NOCULL, 1); sf(mat, NOFOG, 1)
+    if sc then sc(mat, r * 0.4, g * 0.4, b * 0.4) end
+    ov_fn(model_render, mat, 0)
+    ffi.cast(DME_t, orig)(ecx, edx, state, info, btw)
+    ov_fn(model_render, nil, 0)
+
+   
+    sf(mat, IGNOREZ, 0)
+    if sc then sc(mat, r, g, b) end
+    ov_fn(model_render, mat, 0)
+    ffi.cast(DME_t, orig)(ecx, edx, state, info, btw)
+    ov_fn(model_render, nil, 0)
+end
+
+GC.fn = ffi.cast(DME_t, Hooked_DME)
+
+local old = ffi.new("unsigned long[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, 0x40, old)
+slot_ptr[0] = ffi.cast("uintptr_t", GC.fn)
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, old[0], old)
+
+callbacks.Register("Unload", "ffichams", function()
+    local old2 = ffi.new("unsigned long[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, 0x40, old2)
+    slot_ptr[0] = orig
+    ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, old2[0], old2)
+    ov_fn(model_render, nil, 0)
+    print("[Chams] Temizlendi")
+end)
+
