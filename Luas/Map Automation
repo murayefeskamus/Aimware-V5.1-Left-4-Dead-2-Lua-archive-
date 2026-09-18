@@ -1,0 +1,92 @@
+This is "LevelInitPreEntity" hook I recommend using this. Bcuz thats engine Level Automatic Getmapname (in engine func or whatever) an xample hook i mean if u wanna turn on something automaticly in each map u can 
+use this hook 
+
+
+
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+    int   VirtualProtect(void* lpAddress, size_t dwSize, unsigned long flNewProtect, unsigned long* lpflOldProtect);
+]]
+
+local function GetInterface(dll, name)
+    local mod = ffi.C.GetModuleHandleA(dll)
+    if mod == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)",
+        ffi.C.GetProcAddress(mod, "CreateInterface"))
+    return ci(name, nil)
+end
+
+local baseClient = nil
+for _, v in ipairs({"VClient017", "VClient016", "VClient015"}) do
+    local ptr = GetInterface("client.dll", v)
+    if ptr and ffi.cast("uintptr_t", ptr) ~= 0 then
+        baseClient = ptr
+        print("[MapHook] Interface: " .. v)
+        break
+    end
+end
+if not baseClient then print("[MapHook] baseClient alinamadi") return end
+
+local vtable = ffi.cast("uintptr_t**", baseClient)[0]
+
+local SLOT_LEVELINIT = 4
+
+local SLOT_HUDTEXT = 12
+
+local LevelInit_t = ffi.typeof("void(__thiscall*)(void*, const char*)")
+local HudText_t   = ffi.typeof("void(__thiscall*)(void*, const char*)")
+
+local pOrigLevelInit = ffi.cast(LevelInit_t, vtable[SLOT_LEVELINIT])
+local fnHudText       = ffi.cast(HudText_t, vtable[SLOT_HUDTEXT])
+
+
+local FRAME_DELAY = 90   
+
+local nPendingFrames = -1
+
+local function HookedLevelInit(this, pMapName)
+    
+    pOrigLevelInit(this, pMapName)
+
+    if pMapName == nil then return end
+    local mapname = ffi.string(pMapName)
+    print("[MapHook] Harita yukleniyor: " .. mapname)
+
+ 
+    if mapname:find("c2m1") then
+        print("[MapHook] c2m1 tespit edildi, X gecikmeli gosterilecek")
+        nPendingFrames = FRAME_DELAY
+    end
+end
+
+local cHookedLevelInit = ffi.cast(LevelInit_t, HookedLevelInit)
+local pSlot = ffi.cast("uintptr_t*", vtable + SLOT_LEVELINIT)
+local oldProtect = ffi.new("uint32_t[1]")
+
+ffi.C.VirtualProtect(pSlot, ffi.sizeof("uintptr_t"), 0x40, oldProtect)
+pSlot[0] = ffi.cast("uintptr_t", cHookedLevelInit)
+ffi.C.VirtualProtect(pSlot, ffi.sizeof("uintptr_t"), oldProtect[0], oldProtect)
+
+print("[MapHook] LevelInitPreEntity hook kuruldu")
+
+
+callbacks.Register("Draw", "maphook_tick", function()
+    if nPendingFrames < 0 then return end
+
+    nPendingFrames = nPendingFrames - 1
+    if nPendingFrames == 0 then
+        pcall(fnHudText, baseClient, "X")
+        print("[MapHook] X gosterildi")
+        nPendingFrames = -1
+    end
+end)
+
+callbacks.Register("Unload", function()
+    ffi.C.VirtualProtect(pSlot, ffi.sizeof("uintptr_t"), 0x40, oldProtect)
+    pSlot[0] = ffi.cast("uintptr_t", pOrigLevelInit)
+    ffi.C.VirtualProtect(pSlot, ffi.sizeof("uintptr_t"), oldProtect[0], oldProtect)
+    callbacks.Unregister("Draw", "maphook_tick")
+    print("[MapHook] Hook kaldirildi")
+end)
