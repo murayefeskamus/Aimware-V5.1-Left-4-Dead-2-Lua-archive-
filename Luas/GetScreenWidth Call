@@ -1,0 +1,49 @@
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+]]
+
+local function GetInterface(dll, name)
+    local mod = ffi.C.GetModuleHandleA(dll)
+    if mod == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)",
+        ffi.C.GetProcAddress(mod, "CreateInterface"))
+    return ci(name, nil)
+end
+
+local baseClient = nil
+for _, v in ipairs({"VClient017", "VClient016", "VClient015"}) do
+    local ptr = GetInterface("client.dll", v)
+    if ptr and ffi.cast("uintptr_t", ptr) ~= 0 then
+        baseClient = ptr
+        print("[ScreenWidth] Interface: " .. v)
+        break
+    end
+end
+if not baseClient then print("[ScreenWidth] baseClient alinamadi") return end
+
+local vtable = ffi.cast("uintptr_t**", baseClient)[0]
+
+local SLOT_GETSCREENWIDTH = 59
+local fnGetScreenWidth = ffi.cast("int(__thiscall*)(void*)", vtable[SLOT_GETSCREENWIDTH])
+
+local nLastPrint = 0
+
+callbacks.Register("Draw", "screenwidth_watch", function()
+    local now = globals.CurTime()
+    if now - nLastPrint < 1.0 then return end   
+    nLastPrint = now
+
+    local ok, w = pcall(fnGetScreenWidth, baseClient)
+    if ok then
+        print("[ScreenWidth] " .. tostring(w))
+    else
+        print("[ScreenWidth] Hata: " .. tostring(w))
+    end
+end)
+
+callbacks.Register("Unload", function()
+    callbacks.Unregister("Draw", "screenwidth_watch")
+    print("[ScreenWidth] Kaldirildi")
+end)
