@@ -1,0 +1,177 @@
+Getallclasses hook type shi 
+
+
+
+
+
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    void* GetProcAddress(void* hModule, const char* lpProcName);
+
+    typedef struct RecvProp_s RecvProp;
+    typedef struct RecvTable_s RecvTable;
+
+    struct RecvTable_s {
+        RecvProp    *m_pProps;
+        int          m_nProps;
+        void        *m_pDecoder;
+        const char  *m_pNetTableName;
+        uint8_t      m_bInitialized;
+        uint8_t      m_bInMainList;
+    };
+
+    struct RecvProp_s {
+        const char  *m_pVarName;
+        int          m_RecvType;
+        int          m_Flags;
+        int          m_StringBufferSize;
+        uint8_t      m_bInsideArray;
+        char         _pad0[3];
+        const void  *m_pExtraData;
+        RecvProp    *m_pArrayProp;
+        void        *m_ArrayLengthProxy;
+        void        *m_ProxyFn;
+        void        *m_DataTableProxyFn;
+        RecvTable   *m_pDataTable;
+        int          m_Offset;
+        int          m_ElementStride;
+        int          m_nElements;
+        const char  *m_pParentArrayPropName;
+    };
+
+    typedef struct ClientClass_s ClientClass;
+    struct ClientClass_s {
+        void         *m_pCreateFn;
+        void         *m_pCreateEventFn;
+        const char   *m_pNetworkName;
+        RecvTable    *m_pRecvTable;
+        ClientClass  *m_pNext;
+        int           m_ClassID;
+    };
+]]
+
+local function GetInterface(dll, name)
+    local mod = ffi.C.GetModuleHandleA(dll)
+    if mod == nil then return nil end
+    local ci = ffi.cast("void*(__cdecl*)(const char*, int*)",
+        ffi.C.GetProcAddress(mod, "CreateInterface"))
+    return ci(name, nil)
+end
+
+local baseClient = nil
+for _, v in ipairs({"VClient017", "VClient016", "VClient015"}) do
+    local ptr = GetInterface("client.dll", v)
+    if ptr and ffi.cast("uintptr_t", ptr) ~= 0 then
+        baseClient = ptr
+        print("[NetVarDump] Interface: " .. v)
+        break
+    end
+end
+if not baseClient then print("[NetVarDump] baseClient alinamadi") return end
+
+
+local vtable = ffi.cast("uintptr_t**", baseClient)[0]
+local fnGetAllClasses = ffi.cast("ClientClass*(__thiscall*)(void*)", vtable[7])
+
+local ok, pHead = pcall(fnGetAllClasses, baseClient)
+if not ok or pHead == nil then
+    print("[NetVarDump] GetAllClasses basarisiz: " .. tostring(pHead))
+    return
+end
+
+
+local MAX_CLASSES = 2000
+local MAX_PROPS_PER_TABLE = 500
+local MAX_RECURSE_DEPTH = 6
+
+
+local function WalkTable(pTable, prefix, depth, outLines)
+    if pTable == nil or depth > MAX_RECURSE_DEPTH then return end
+
+    local nProps = pTable.m_nProps
+    if nProps <= 0 or nProps > MAX_PROPS_PER_TABLE then return end
+
+    for i = 0, nProps - 1 do
+        local prop = pTable.m_pProps[i]
+        if prop.m_pVarName ~= nil then
+            local name = ffi.string(prop.m_pVarName)
+
+            if prop.m_pDataTable ~= nil and name ~= "baseclass" then
+           
+                WalkTable(prop.m_pDataTable, prefix .. name .. ".", depth + 1, outLines)
+            elseif name:sub(1, 2) == "m_" then
+                table.insert(outLines, string.format("    %-40s offset=%-5d flags=%d",
+                    prefix .. name, prop.m_Offset, prop.m_Flags))
+            end
+        end
+    end
+end
+
+
+local pCur = pHead
+local nCount = 0
+local allLines = {}
+
+while pCur ~= nil and nCount < MAX_CLASSES do
+    local className = pCur.m_pNetworkName ~= nil and ffi.string(pCur.m_pNetworkName) or "?"
+    local pTable = pCur.m_pRecvTable
+
+    if pTable ~= nil then
+        local lines = {}
+        WalkTable(pTable, "", 0, lines)
+
+        if #lines > 0 then
+            table.insert(allLines, string.format("[%s]  (ClassID=%d)", className, pCur.m_ClassID))
+            for _, l in ipairs(lines) do
+                table.insert(allLines, l)
+            end
+        end
+    end
+
+    pCur = pCur.m_pNext
+    nCount = nCount + 1
+end
+
+print(string.format("[NetVarDump] %d class tarandi, dokum asagida:", nCount))
+for _, l in ipairs(allLines) do
+    print(l)
+end
+
+function FindNetVarOffset(wantedClass, wantedProp)
+    local pC = pHead
+    local n = 0
+    while pC ~= nil and n < MAX_CLASSES do
+        local cname = pC.m_pNetworkName ~= nil and ffi.string(pC.m_pNetworkName) or ""
+        if cname == wantedClass or cname == ("DT_" .. wantedClass) then
+            local result = nil
+            local function Search(pTable, depth)
+                if pTable == nil or depth > MAX_RECURSE_DEPTH or result then return end
+                for i = 0, pTable.m_nProps - 1 do
+                    local prop = pTable.m_pProps[i]
+                    if prop.m_pVarName ~= nil then
+                        local pname = ffi.string(prop.m_pVarName)
+                        if pname == wantedProp then
+                            result = prop.m_Offset
+                            return
+                        elseif prop.m_pDataTable ~= nil then
+                            Search(prop.m_pDataTable, depth + 1)
+                        end
+                    end
+                end
+            end
+            Search(pC.m_pRecvTable, 0)
+            if result then return result end
+        end
+        pC = pC.m_pNext
+        n = n + 1
+    end
+    return nil
+end
+
+-- some xamples 
+
+local teamOff = FindNetVarOffset("DT_BaseEntity", "m_iTeamNum")
+local lifeOff  = FindNetVarOffset("DT_BasePlayer", "m_lifeState")
+print(string.format("[NetVarDump] m_iTeamNum=%s  m_lifeState=%s",
+    tostring(teamOff), tostring(lifeOff)))
