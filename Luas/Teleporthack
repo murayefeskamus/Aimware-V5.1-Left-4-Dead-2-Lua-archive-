@@ -1,0 +1,144 @@
+method 1
+
+
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local CREATEMOVE_INDEX       = 27
+
+local ref    = gui.Reference("Misc", "General", "Extra")
+local enable = gui.Checkbox(ref, "tp.on",  "Teleport",  false)
+local tp_key = gui.Keybox(ref,   "tp.key", "TP Key",    0)
+
+local GC = { original = nil, hook_fn = nil, slot_ptr = nil }
+
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if not cm_sig then print("[TP] cm_sig bulunamadi") return end
+
+local global_addr = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+if global_addr == 0 then print("[TP] global_addr null") return end
+
+local pClientMode = ffi.cast("uintptr_t*", global_addr)[0]
+if pClientMode == 0 then print("[TP] ClientMode null") return end
+
+local vtable   = ffi.cast("uintptr_t*", ffi.cast("uintptr_t*", pClientMode)[0])
+local slot_ptr = vtable + CREATEMOVE_INDEX
+
+GC.slot_ptr = slot_ptr
+GC.original = slot_ptr[0]
+
+local cm_t = ffi.typeof("bool(__fastcall*)(void*, void*, float, void*)")
+
+local function Hooked_CreateMove(ecx, edx, flInputSampleTime, cmd)
+    local result = ffi.cast(cm_t, GC.original)(ecx, edx, flInputSampleTime, cmd)
+    if cmd == nil then return result end
+
+    if enable:GetValue() then
+        local k = tp_key:GetValue()
+        if k ~= 0 and input.IsButtonDown(k) then
+            ffi.cast("float*", ffi.cast("uintptr_t", cmd) + 0x14)[0] = 1e37
+        end
+    end
+
+    return result
+end
+
+GC.hook_fn = ffi.cast(cm_t, Hooked_CreateMove)
+
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, PAGE_EXECUTE_READWRITE, old)
+slot_ptr[0] = ffi.cast("uintptr_t", GC.hook_fn)
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, old[0], old)
+
+callbacks.Register("Unload", function()
+    if GC.original and GC.slot_ptr then
+        local old2 = ffi.new("uint32_t[1]")
+        ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 4, PAGE_EXECUTE_READWRITE, old2)
+        GC.slot_ptr[0] = ffi.cast("uintptr_t", GC.original)
+        ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 4, old2[0], old2)
+        print("[TP] Temizlendi")
+    end
+end)
+
+
+
+
+method 2
+
+
+
+
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local CREATEMOVE_INDEX       = 27
+local TP_ROLL_INT            = 2096152002  
+
+local ref    = gui.Reference("Misc", "General", "Extra")
+local enable = gui.Checkbox(ref, "tp.on",  "Teleport",  false)
+local tp_key = gui.Keybox(ref,   "tp.key", "TP Key",    0)
+
+local GC = { original = nil, hook_fn = nil, slot_ptr = nil }
+
+local cm_sig = mem.FindPattern("client.dll", "89 04 B5 ?? ?? ?? ?? E8")
+if not cm_sig then print("[TP] cm_sig bulunamadi") return end
+
+local global_addr = ffi.cast("uintptr_t*", ffi.cast("uintptr_t", cm_sig) + 3)[0]
+if global_addr == 0 then print("[TP] global_addr null") return end
+
+local pClientMode = ffi.cast("uintptr_t*", global_addr)[0]
+if pClientMode == 0 then print("[TP] ClientMode null") return end
+
+local vtable   = ffi.cast("uintptr_t*", ffi.cast("uintptr_t*", pClientMode)[0])
+local slot_ptr = vtable + CREATEMOVE_INDEX
+
+GC.slot_ptr = slot_ptr
+GC.original = slot_ptr[0]
+
+local cm_t   = ffi.typeof("bool(__fastcall*)(void*, void*, float, void*)")
+local dbg_n  = 0
+
+local function Hooked_CreateMove(ecx, edx, flInputSampleTime, cmd)
+    local result = ffi.cast(cm_t, GC.original)(ecx, edx, flInputSampleTime, cmd)
+    if cmd == nil then return result end
+
+ 
+    dbg_n = dbg_n + 1
+    if dbg_n <= 3 then
+        print("[TP] Hook calisti! cmd=" .. tostring(ffi.cast("uintptr_t", cmd)))
+    end
+
+    if not enable:GetValue() then return result end
+
+    local k = tp_key:GetValue()
+    if k ~= 0 and input.IsButtonDown(k) then
+        local roll_ptr = ffi.cast("int*", ffi.cast("uintptr_t", cmd) + 0x14)
+        roll_ptr[0] = TP_ROLL_INT
+        if dbg_n <= 20 then
+            print("[TP] TP yazildi! roll=" .. tostring(roll_ptr[0]))
+        end
+    end
+
+    return result
+end
+
+GC.hook_fn = ffi.cast(cm_t, Hooked_CreateMove)
+
+local old = ffi.new("uint32_t[1]")
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, PAGE_EXECUTE_READWRITE, old)
+slot_ptr[0] = ffi.cast("uintptr_t", GC.hook_fn)
+ffi.C.VirtualProtect(ffi.cast("void*", slot_ptr), 4, old[0], old)
+
+callbacks.Register("Unload", function()
+    if GC.original and GC.slot_ptr then
+        local old2 = ffi.new("uint32_t[1]")
+        ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 4, PAGE_EXECUTE_READWRITE, old2)
+        GC.slot_ptr[0] = ffi.cast("uintptr_t", GC.original)
+        ffi.C.VirtualProtect(ffi.cast("void*", GC.slot_ptr), 4, old2[0], old2)
+        print("[TP] Temizlendi")
+    end
+end)
+
+
+
+
+
+
