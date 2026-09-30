@@ -1,0 +1,40 @@
+local streak = 0
+local ticks_held = 0
+
+callbacks.Register("CreateMove", function(cmd)
+    local lp = entities.GetLocalPlayer()
+    if not lp or not lp:IsAlive() then
+        streak = 0
+        ticks_held = 0
+        return
+    end
+
+    local user_wants_jump = bit.band(cmd:GetButtons(), 1) ~= 0
+    if not user_wants_jump then
+        streak = 0
+        ticks_held = 0
+        return
+    end
+
+    local flags = lp:GetPropInt("m_fFlags")
+    local on_ground = bit.band(flags, 1) ~= 0
+
+    if on_ground then
+        if streak >= 4 then
+            streak = 0
+        else
+            streak = streak + 1
+        end
+        cmd:SetButtons(bit.bor(cmd:GetButtons(), 1))
+        ticks_held = 1
+    else
+        if streak >= 4 then
+            cmd:SetButtons(bit.bor(cmd:GetButtons(), 1))
+        elseif ticks_held > 0 and ticks_held < 2 then
+            cmd:SetButtons(bit.bor(cmd:GetButtons(), 1))
+            ticks_held = ticks_held + 1
+        else
+            cmd:SetButtons(bit.band(cmd:GetButtons(), bit.bnot(1)))
+        end
+    end
+end)
