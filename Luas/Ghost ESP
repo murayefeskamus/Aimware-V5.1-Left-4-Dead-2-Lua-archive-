@@ -1,4 +1,39 @@
-local font = draw.CreateFont("Tahoma", 11, 700)
+local font = draw.CreateFont("Arial", 12, 700)
+
+local function check_is_ghost(player)
+    if not player then return false end
+
+    local g = player:GetProp("m_isGhost")
+    if g == 1 or g == true then return true end
+
+    local gb = player:GetPropBool("m_isGhost")
+    if gb == true then return true end
+
+    local gi = player:GetPropInt("m_isGhost")
+    if gi == 1 then return true end
+
+    local pr = entities.FindByClass("CTerrorPlayerResource")[1]
+    if pr then
+        local idx = player:GetIndex()
+        local pr_g = pr:GetProp("m_isGhost", idx)
+        if pr_g == 1 or pr_g == true then return true end
+        local pr_gi = pr:GetPropInt("m_isGhost", idx)
+        if pr_gi == 1 then return true end
+    end
+
+    return false
+end
+
+local function draw_text_outlined(x, y, text)
+    draw.Color(0, 0, 0, 255)
+    draw.Text(x - 1, y, text)
+    draw.Text(x + 1, y, text)
+    draw.Text(x, y - 1, text)
+    draw.Text(x, y + 1, text)
+
+    draw.Color(255, 255, 255, 255)
+    draw.Text(x, y, text)
+end
 
 callbacks.Register("Draw", "ghost_status_esp_draw", function()
     local lp = entities.GetLocalPlayer()
@@ -12,18 +47,29 @@ callbacks.Register("Draw", "ghost_status_esp_draw", function()
     for i = 1, #players do
         local player = players[i]
 
-        if player and player:IsAlive() and player:GetIndex() ~= lp:GetIndex() then
+        if player and player:GetIndex() ~= lp:GetIndex() then
             if player:GetTeamNumber() == 3 then
-                local is_ghost = player:GetPropInt("m_isGhost") == 1
-                local text = is_ghost and "Ghost" or "Spawned"
+                local is_ghost = check_is_ghost(player)
+                local is_alive = player:IsAlive() and (player:GetHealth() > 0)
 
-                local origin = player:GetAbsOrigin()
-                if origin then
-                    local sx, sy = client.WorldToScreen(origin)
-                    if sx and sy then
-                        local tw, th = draw.GetTextSize(text)
-                        draw.Color(255, 255, 255, 255)
-                        draw.TextShadow(math.floor(sx - (tw / 2)), math.floor(sy + 2), text)
+                local text = nil
+                if is_ghost then
+                    text = "Ghost"
+                elseif is_alive then
+                    text = "Spawned"
+                end
+
+                if text then
+                    local origin = player:GetAbsOrigin()
+                    if origin then
+                        local sx, sy = client.WorldToScreen(origin)
+                        if sx and sy then
+                            local tw, th = draw.GetTextSize(text)
+                            local x = math.floor(sx - (tw / 2))
+                            local y = math.floor(sy + 8)
+
+                            draw_text_outlined(x, y, text)
+                        end
                     end
                 end
             end
