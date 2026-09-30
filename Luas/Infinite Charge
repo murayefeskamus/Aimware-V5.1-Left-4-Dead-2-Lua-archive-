@@ -1,0 +1,36 @@
+local is_charging = false
+
+client.AllowListener("charger_charge_start")
+client.AllowListener("charger_charge_end")
+client.AllowListener("player_death")
+client.AllowListener("round_start")
+
+callbacks.Register("FireGameEvent", function(e)
+    local name = e:GetName()
+    local me = client.GetLocalPlayerIndex()
+
+    if name == "charger_charge_start" then
+        if client.GetPlayerIndexByUserID(e:GetInt("userid")) == me then
+            is_charging = true
+        end
+    elseif name == "charger_charge_end" then
+        if client.GetPlayerIndexByUserID(e:GetInt("userid")) == me then
+            is_charging = false
+        end
+    elseif name == "player_death" or name == "round_start" then
+        is_charging = false
+    end
+end)
+
+callbacks.Register("Draw", function()
+    local lp = entities.GetLocalPlayer()
+    if lp and lp:IsAlive() and is_charging then
+        engine.AddOutSeqNr(1200)
+    else
+        engine.AddOutSeqNr(0)
+    end
+end)
+
+callbacks.Register("Unload", function()
+    engine.AddOutSeqNr(0)
+end)
