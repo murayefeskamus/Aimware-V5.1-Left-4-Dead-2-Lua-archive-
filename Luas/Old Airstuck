@@ -1,0 +1,30 @@
+Airstuck aka Jockey TP
+
+lua:
+
+
+
+callbacks.Register("CreateMove", function(cmd)
+    local inf = 1 / 0 -- or math.huge
+    cmd.sidemove = inf
+    cmd.upmove = inf
+    cmd.forwardmove = inf
+    cmd.viewangles = EulerAngles(inf, inf, inf)
+end)
+
+
+
+
+
+cpp:
+
+
+
+float one = 1;
+    float zero = 0;
+    float inf = one / zero;
+    cmd->viewangles.x = inf;
+    cmd->viewangles.y = inf;
+    cmd->viewangles.z = inf;
+    cmd->upmove = inf;
+    cmd->sidemove = inf;
