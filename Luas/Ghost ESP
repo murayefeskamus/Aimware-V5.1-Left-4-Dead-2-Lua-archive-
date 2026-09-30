@@ -1,0 +1,32 @@
+local font = draw.CreateFont("Tahoma", 11, 700)
+
+callbacks.Register("Draw", "ghost_status_esp_draw", function()
+    local lp = entities.GetLocalPlayer()
+    if not lp then return end
+
+    local players = entities.FindByClass("CTerrorPlayer")
+    if not players then return end
+
+    draw.SetFont(font)
+
+    for i = 1, #players do
+        local player = players[i]
+
+        if player and player:IsAlive() and player:GetIndex() ~= lp:GetIndex() then
+            if player:GetTeamNumber() == 3 then
+                local is_ghost = player:GetPropInt("m_isGhost") == 1
+                local text = is_ghost and "Ghost" or "Spawned"
+
+                local origin = player:GetAbsOrigin()
+                if origin then
+                    local sx, sy = client.WorldToScreen(origin)
+                    if sx and sy then
+                        local tw, th = draw.GetTextSize(text)
+                        draw.Color(255, 255, 255, 255)
+                        draw.TextShadow(math.floor(sx - (tw / 2)), math.floor(sy + 2), text)
+                    end
+                end
+            end
+        end
+    end
+end)
