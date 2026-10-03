@@ -1,0 +1,21 @@
+pcall(function()
+    ffi.cdef[[
+        bool VirtualProtect(void* lpAddress, uint32_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+    ]]
+end)
+local function write_bytes(addr, bytes)
+    local ptr = ffi.cast("uint8_t*", addr)
+    local old = ffi.new("uint32_t[1]")
+    ffi.C.VirtualProtect(ffi.cast("void*", addr), #bytes, 0x40, old)
+    for i, b in ipairs(bytes) do
+        ptr[i-1] = b
+    end
+    ffi.C.VirtualProtect(ffi.cast("void*", addr), #bytes, old[0], old)
+end
+local p = mem.FindPattern("engine.dll",
+    "A1 ?? ?? ?? ?? 83 78 30 00 74 06 B8 01 00 00 00 C3")
+if p then
+    local addr = ffi.cast("uintptr_t", p)
+    
+    -- Patch: mov eax, 3; ret
+    -- B8 03 00 00 00 = mov eax, 3
