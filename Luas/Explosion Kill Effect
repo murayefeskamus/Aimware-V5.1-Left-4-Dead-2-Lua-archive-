@@ -1,0 +1,187 @@
+
+pcall(function()
+    ffi.cdef[[
+        // Explosion callback sadece +0x00, +0x30, +0x38, +0x3C okuyor (IDA dogrulandi)
+        typedef struct {
+            float vOrigin_x, vOrigin_y, vOrigin_z;   // +0x00
+            float vStart_x,  vStart_y,  vStart_z;    // +0x0C
+            float vNormal_x, vNormal_y, vNormal_z;   // +0x18
+            float vAngles_x, vAngles_y, vAngles_z;   // +0x24
+            int   fFlags;        // +0x30
+            int   hEntity;       // +0x34
+            float flScale;       // +0x38
+            float flMagnitude;   // +0x3C
+            float flRadius;      // +0x40
+            int   nAttachmentIndex; // +0x44
+            short nSurfaceProp;  // +0x48
+            short _pad;          // +0x4A
+            int   iEffectName;   // +0x4C
+            unsigned char nMaterial;    // +0x50
+            unsigned char nDamageType;  // +0x51
+            unsigned char nHitBox;      // +0x52
+            unsigned char nColor;       // +0x53
+        } CEffectData_t;
+    ]]
+end)
+
+local last_err = nil
+local function err_once(msg)
+    if msg ~= last_err then
+        last_err = msg
+        print("[BOMB] " .. msg)
+    end
+end
+
+local function list_funcs(tbl)
+    local names = {}
+    local ok = pcall(function()
+        for k, v in pairs(tbl) do
+            if type(v) == "function" then names[#names + 1] = tostring(k) end
+        end
+    end)
+    if not ok then return "(okunamadi)" end
+    table.sort(names)
+    return table.concat(names, ", ")
+end
+
+local function describe(obj)
+    local ok, mt = pcall(getmetatable, obj)
+    if ok and type(mt) == "table" and type(mt.__index) == "table" then
+        return list_funcs(mt.__index)
+    end
+    return "(metatable okunamadi)"
+end
+
+local pDE = mem.FindPattern("client.dll",
+    "55 8B EC 83 EC 08 53 56 33 DB F6 05 ?? ?? ?? ?? 01 57 75 41")
+
+local DispatchEffect
+local deAddr = 0
+if pDE then
+    local ok, v = pcall(function() return tonumber(ffi.cast("uintptr_t", pDE)) end)
+    if ok and v then deAddr = v end
+end
+
+if deAddr ~= 0 then
+    DispatchEffect = ffi.cast("void(__cdecl*)(const char*, void*)", deAddr)   -- __cdecl (name, data)
+    print(string.format("[BOMB] DispatchEffect @ 0x%X", deAddr))
+else
+    print("[BOMB] HATA: DispatchEffect bulunamadi!")
+end
+
+local function in_game()
+    local ok, lp = pcall(entities.GetLocalPlayer)
+    return ok and lp ~= nil
+end
+
+local function SpawnExplosion(pos)
+    if not DispatchEffect then return end
+    if not in_game() then return end
+
+    local data = ffi.new("CEffectData_t")
+    data.vOrigin_x, data.vOrigin_y, data.vOrigin_z = pos.x, pos.y, pos.z
+    data.vStart_x,  data.vStart_y,  data.vStart_z  = pos.x, pos.y, pos.z
+    data.vNormal_x, data.vNormal_y, data.vNormal_z = 0.0, 0.0, 1.0
+    data.flMagnitude = 150.0   -- patlama gucu
+    data.flScale     = 1.0    
+    data.flRadius    = 200.0
+    data.fFlags      = 0
+
+    local ok, err = pcall(function() DispatchEffect("Explosion", data) end)
+    if not ok then err_once("DispatchEffect error: " .. tostring(err)) end
+end
+
+
+local INFECTED = {
+    Infected = true, Witch = true, Tank = true,
+    Hunter   = true, Smoker = true, Boomer = true,
+    Jockey   = true, Spitter = true, Charger = true,
+}
+
+
+local HAS_FIND    = type(entities.FindByClass) == "function"
+local HAS_HIGHEST = type(entities.GetHighestEntityIndex) == "function"
+local HAS_BYINDEX = type(entities.GetByIndex) == "function"
+
+if HAS_FIND then
+    print("[BOMB] entity kaynagi: entities.FindByClass")
+elseif HAS_HIGHEST and HAS_BYINDEX then
+    print("[BOMB] entity kaynagi: GetHighestEntityIndex + GetByIndex")
+else
+    print("[BOMB] entity listeleme fonksiyonu bulunamadi. entities fonksiyonlari:")
+    print("  " .. list_funcs(entities))
+end
+
+-- {ent, cls}
+local function collect()
+    local out = {}
+    if HAS_FIND then
+        for cls in pairs(INFECTED) do
+            local ok, list = pcall(entities.FindByClass, cls)
+            if ok and type(list) == "table" then
+                for _, e in ipairs(list) do out[#out + 1] = { e, cls } end
+            end
+        end
+    elseif HAS_HIGHEST and HAS_BYINDEX then
+        for i = 1, entities.GetHighestEntityIndex() do
+            local e = entities.GetByIndex(i)
+            if e then out[#out + 1] = { e, nil } end
+        end
+    end
+    return out
+end
+
+local prevHP = {}
+local described = false
+
+local function process(ent, cls)
+    if ent.IsValid and not ent:IsValid() then return end
+    if ent.IsDormant and ent:IsDormant() then return end
+
+    cls = cls or ent:GetClass()
+    if not INFECTED[cls] then return end
+
+    local idx = ent:GetIndex()
+    local okh, hp = pcall(function() return ent:GetProp("DT_BasePlayer", "m_iHealth") end)
+    if not okh or not hp then return end
+
+    local prev = prevHP[idx]
+    if prev and prev > 0 and hp <= 0 then
+        local pos = ent:GetAbsOrigin()
+        if pos then
+            SpawnExplosion(pos)
+            print(string.format("[BOMB] %s @(%.0f,%.0f,%.0f)", cls, pos.x, pos.y, pos.z))
+        end
+        prevHP[idx] = nil
+    elseif hp > 0 then
+        prevHP[idx] = hp
+    end
+end
+
+callbacks.Register("CreateMove", "bomb_kill_efx", function(cmd)
+    if not in_game() then prevHP = {} return end
+
+    local ok, list = pcall(collect)
+    if not ok then err_once("entity listesi alinamadi: " .. tostring(list)) return end
+
+    for i = 1, #list do
+        local ent, cls = list[i][1], list[i][2]
+        local ok2, err = pcall(process, ent, cls)
+        if not ok2 then
+            err_once("entity hatasi: " .. tostring(err))
+            if not described then
+                described = true
+                print("[BOMB] entity nesnesinin fonksiyonlari: " .. describe(ent))
+            end
+        end
+    end
+end)
+
+callbacks.Register("Unload", "bomb_kill_efx_unload", function()
+    pcall(callbacks.Unregister, "CreateMove", "bomb_kill_efx")
+    prevHP = {}
+    print("[BOMB] Unloaded")
+end)
+
+print("[BOMB] Hazir - infected oldurdugunde patlama efekti cikar.")
+print(DispatchEffect and "[BOMB] DispatchEffect OK" or "[BOMB] DispatchEffect BULUNAMADI")
