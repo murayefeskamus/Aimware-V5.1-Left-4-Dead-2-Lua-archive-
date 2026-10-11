@@ -60,8 +60,8 @@ callbacks.Register("CreateMove", "lag_oneshot", function(cmd)
     local t    = now()
 
     if down and not was_down then
-        local ok, err = pcall(engine.addoutseqnr, SEQ_ADD)
-        if not ok then print("[LagOneShot] engine.addoutseqnr hatasi: " .. tostring(err)) end
+        local ok, err = pcall(Engine.AddOutSeqNr, SEQ_ADD)
+        if not ok then print("[LagOneShot] AddOutSeqNr hatasi: " .. tostring(err)) end
     end
 
     if down then
