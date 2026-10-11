@@ -1,0 +1,102 @@
+//jauyek
+
+
+
+
+
+local aim_tank_group = gui.Groupbox(gui.Reference("Misc", "General"), "Infected Aim", 15, 130, 296, 190)
+local enable_checkbox = gui.Checkbox(aim_tank_group, "lua_aim_tank_enable", "Enable", false)
+local keybind = gui.Keybox(aim_tank_group, 'lua_aim_tank_key', 'On Key', 1)
+
+local filter_multibox = gui.Multibox(aim_tank_group, "Filter")
+local bots_checkbox = gui.Checkbox(filter_multibox, "target_bots", "Bots", true)
+local players_checkbox = gui.Checkbox(filter_multibox, "target_players", "Players", true)
+
+local auto_hit_checkbox = gui.Checkbox(aim_tank_group, "lua_aim_tank_auto_hit", "Tank Auto Hit", false)
+local range_slider = gui.Slider(aim_tank_group, "lua_aim_tank_range", "Aim Range", 5000, 1, 10000)
+
+local function is_key_pressed(key)
+    return input.IsButtonDown(key)
+end
+
+local function is_survivor_valid(local_player, survivor)
+    local ignore_bots = not bots_checkbox:GetValue()
+    local ignore_players = not players_checkbox:GetValue()
+
+    if ignore_bots and survivor:GetClass() == "SurvivorBot" then
+        return false
+    end
+
+    if ignore_players and survivor:GetClass() ~= "SurvivorBot" then
+        return false
+    end
+
+    return survivor:IsPlayer() and survivor:IsAlive() and survivor:GetTeamNumber() ~= local_player:GetTeamNumber() and not survivor:GetPropBool("m_isIncapacitated")
+end
+
+local function is_valid_team(local_player)
+    return local_player:GetTeamNumber() == 3
+end
+
+local function find_closest_survivor()
+    local local_player = entities.GetLocalPlayer()
+    if not local_player or not local_player:IsAlive() or not is_valid_team(local_player) then
+        return nil
+    end
+
+    local survivors = entities.FindByClass("CCSPlayer")
+    local closest_survivor, closest_distance = nil, math.huge
+
+    for _, survivor in ipairs(survivors) do
+        if is_survivor_valid(local_player, survivor) then
+            local distance = (local_player:GetAbsOrigin() - survivor:GetAbsOrigin()):Length()
+            if distance < closest_distance then
+                closest_survivor = survivor
+                closest_distance = distance
+            end
+        end
+    end
+
+    return closest_survivor, closest_distance
+end
+
+local function clamp_angle(angle)
+    return math.max(-20, math.min(20, angle))
+end
+
+local function simulate_primary_attack(cmd)
+    cmd.buttons = bit.bor(cmd.buttons, 1)
+end
+
+local function force_aim(cmd)
+    local local_player = entities.GetLocalPlayer()
+    if not local_player then
+        return
+    end
+
+    local closest_survivor, closest_distance = find_closest_survivor()
+    if closest_survivor and closest_distance <= range_slider:GetValue() then
+        local local_pos = local_player:GetAbsOrigin()
+        local survivor_pos = closest_survivor:GetAbsOrigin()
+
+        local forward_vector = survivor_pos - local_pos
+        local angles = forward_vector:Angles()
+
+        angles.x = clamp_angle(angles.x)
+
+        engine.SetViewAngles(angles)
+
+        local maxHealth = local_player:GetMaxHealth()
+        if auto_hit_checkbox:GetValue() and closest_distance <= 165 and maxHealth >= 3000 then
+            simulate_primary_attack(cmd)
+        end
+    end
+end
+
+local function switch(cmd)
+    if enable_checkbox:GetValue() and is_key_pressed(keybind:GetValue()) then
+        force_aim(cmd)
+    end
+end
+
+callbacks.Register("CreateMove", "aim_tank_switch", switch)
