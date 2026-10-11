@@ -1,0 +1,107 @@
+think func hook for zombiepanel shit its about pathed old exploit named "Respawn Everywhere" i will share it too 
+
+
+
+
+
+
+
+pcall(ffi.cdef, [[
+    void* GetModuleHandleA(const char* name);
+    int   VirtualProtect(void* addr, unsigned long size, unsigned long newProt, unsigned long* oldProt);
+]])
+local C = ffi.C
+
+if _G.__ZTF_UNHOOK then pcall(_G.__ZTF_UNHOOK) end 
+
+local VT_RVA     = 0x5D6EC4      
+local SLOT_THINK = 27           
+local THINK_RVA  = 0x2D33D0
+local OFF_TOOFAR = 111          
+local VT_ISVIS   = 34          
+local IDLE_DRAWS = 30         
+
+local client = C.GetModuleHandleA("client.dll")
+if client == nil then print("[TooFarRead] client.dll bulunamadi") return end
+
+local base     = tonumber(ffi.cast("uintptr_t", client))
+local slot     = ffi.cast("uintptr_t*", base + VT_RVA + SLOT_THINK * 4)
+local expected = base + THINK_RVA
+
+if tonumber(slot[0]) ~= expected then
+    print("[TooFarRead] vtable slotu beklenen degil (baska script hook'lamis olabilir), iptal")
+    return
+end
+
+local OrigT = ffi.typeof("void(__fastcall*)(void*, void*)")
+local BoolT = ffi.typeof("uint8_t(__fastcall*)(void*, void*)")
+local orig  = ffi.cast(OrigT, expected)
+
+local state, think_counter = false, 0
+local pending = {}
+
+local function write_slot(val)
+    local old = ffi.new("unsigned long[1]")
+    C.VirtualProtect(slot, 4, 0x04, old)                 
+    slot[0] = val
+    C.VirtualProtect(slot, 4, old[0], old)
+end
+
+local function think_body(this)
+    local panel = ffi.cast("void**", this)[OFF_TOOFAR]
+    if panel == nil then return end
+    local vt      = ffi.cast("void***", panel)[0]
+    local visible = ffi.cast(BoolT, vt[VT_ISVIS])(panel, nil) ~= 0
+
+    think_counter = think_counter + 1
+    if visible ~= state then
+        state = visible
+        pending[#pending + 1] = visible
+    end
+end
+
+local hook = ffi.cast(OrigT, function(this, edx)
+    orig(this, edx)
+    pcall(think_body, this)
+end)
+
+write_slot(ffi.cast("uintptr_t", hook))
+
+local last_counter, idle = 0, 0
+
+callbacks.Register("Draw", "ztf_read_draw", function()
+    if think_counter == last_counter then
+        idle = idle + 1
+        if state and idle > IDLE_DRAWS then
+            state = false
+            pending[#pending + 1] = false
+        end
+    else
+        idle, last_counter = 0, think_counter
+    end
+
+    local q = pending
+    pending = {}
+    for i = 1, #q do
+        print("[TooFarRead] too far = " .. tostring(q[i]))
+    end
+
+    draw.Color(state and 255 or 180, state and 80 or 180, state and 80 or 180, 255)
+    draw.Text(20, 200, "TooFar: " .. tostring(state))
+end)
+
+function ZombieTooFar_IsTooFar() return state end
+
+local function unhook()
+    write_slot(expected)
+    hook:free()
+    _G.__ZTF_UNHOOK = nil
+end
+_G.__ZTF_UNHOOK = unhook
+
+callbacks.Register("Unload", "ztf_read_unload", function()
+    unhook()
+    print("[TooFarRead] kaldirildi")
+end)
+
+print("[TooFarRead] aktif")
