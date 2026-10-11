@@ -1,0 +1,91 @@
+//jauyek
+
+
+
+
+
+ffi.cdef[[
+    bool VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+]]
+
+local client_state = nil
+local net_channel = nil
+
+local kernel32 = ffi.load("kernel32")
+
+local function BytePatch(address, byte, length)
+    if address == nil or address == 0 then
+        return
+    end
+
+    local oldProtect = ffi.new("uint32_t[1]")
+    local address_ptr = ffi.cast("void*", address)
+
+    if kernel32.VirtualProtect(address_ptr, length, 0x40, oldProtect) == 0 then
+        return
+    end
+
+    local byte_ptr = ffi.cast("uint8_t*", address_ptr)
+    for i = 0, length - 1 do
+        byte_ptr[i] = byte
+    end
+
+    kernel32.VirtualProtect(address_ptr, length, oldProtect[0], oldProtect)
+end
+
+local function InitializeAddresses()
+    local client_state_signature = "A1 ?? ?? ?? ?? 83 C0 08"
+    local match = mem.FindPattern("engine.dll", client_state_signature)
+
+    if not match then
+        return false
+    end
+
+    local client_state_ptr = ffi.cast("uintptr_t*", match + 1)[0]
+
+    if client_state_ptr == 0 or client_state_ptr == nil then
+        return false
+    end
+
+    client_state = ffi.cast("uintptr_t*", client_state_ptr)[0]
+
+    if client_state == 0 or client_state == nil then
+        return false
+    end
+
+    net_channel = ffi.cast("uintptr_t*", client_state + 24)[0]
+
+    if net_channel == 0 or net_channel == nil then
+        return false
+    end
+
+    return true
+end
+
+callbacks.Register("CreateMove", function(cmd)
+
+    if client_state == nil or net_channel == nil then
+        if not InitializeAddresses() then return end
+    end
+
+    local chokedcommands_offset = 19024
+    local chokedcommands_ptr = ffi.cast("int*", client_state + chokedcommands_offset)
+
+    if input.IsButtonDown('f') then
+        chokedcommands_ptr[0] = 80
+    end
+
+    local choked_packets_offset = 28
+    local choked_packets_ptr = ffi.cast("int*", net_channel + choked_packets_offset)
+
+   -- if input.IsButtonDown('f') then
+       -- choked_packets_ptr[0] = 700
+   --  end
+end)
+
+local signature = "85 C0 7E ?? 0F B6 C8"
+local match = mem.FindPattern("engine.dll", signature)
+
+if match then
+    BytePatch(match, 0x90, 4)
+end
