@@ -1,0 +1,90 @@
+
+pcall(ffi.cdef, [[
+    void* GetModuleHandleA(const char* name);
+    void* GetProcAddress(void* module, const char* name);
+    typedef void* (*CreateInterfaceFn)(const char* name, int* ret);
+]])
+local C = ffi.C
+
+local ALLOW_FFI            = true
+local VT_GETNETCHANNELINFO = 74    
+local VT_NCI_GETADDRESS    = 1     
+local POLL_TICKS           = 64    
+
+local GetNetChanT = ffi.typeof("void*(__fastcall*)(void*, void*)")
+local GetAddrT    = ffi.typeof("const char*(__fastcall*)(void*, void*)")
+
+local engine_iface
+local function get_engine_iface()
+    if engine_iface then return engine_iface end
+    local h = C.GetModuleHandleA("engine.dll")
+    if h == nil then return nil end
+    local p = C.GetProcAddress(h, "CreateInterface")
+    if p == nil then return nil end
+    local e = ffi.cast("CreateInterfaceFn", p)("VEngineClient013", nil)
+    if e == nil then return nil end
+    engine_iface = e
+    return e
+end
+
+local function in_game()
+    local ok, lp = pcall(entities.GetLocalPlayer)
+    return ok and lp ~= nil
+end
+
+local function addr_from_api()
+    for _, tname in ipairs({ "engine", "Engine", "EngineClient" }) do
+        local tbl = rawget(_G, tname)
+        if tbl ~= nil then
+            for _, fname in ipairs({ "GetServerIP", "GetServerAddress", "GetServerIp" }) do
+                local okf, fn = pcall(function() return tbl[fname] end)
+                if okf and type(fn) == "function" then
+                    local ok, s = pcall(fn)
+                    if ok and type(s) == "string" and s ~= "" then return s, tname .. "." .. fname end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- netchan
+local function addr_from_netchan()
+    local e = get_engine_iface()
+    if not e then return nil end
+    local vt = ffi.cast("void***", e)[0]
+    local nc = ffi.cast(GetNetChanT, vt[VT_GETNETCHANNELINFO])(e, nil)
+    if nc == nil then return nil end
+    local nvt = ffi.cast("void***", nc)[0]
+    local p   = ffi.cast(GetAddrT, nvt[VT_NCI_GETADDRESS])(nc, nil)
+    if p == nil then return nil end
+    return ffi.string(p), "netchannel"
+end
+
+local function get_addr()
+    local s, src = addr_from_api()
+    if s then return s, src end
+    if ALLOW_FFI then return addr_from_netchan() end
+    return nil
+end
+
+local last, ticks = nil, POLL_TICKS
+
+local function check()
+    if not in_game() then last = nil return end
+    local ok, s, src = pcall(get_addr)
+    if not ok then print("[ServerIP] hata: " .. tostring(s)) return end
+    if s and s ~= last then
+        last = s
+        local valid = s:match("^%d+%.%d+%.%d+%.%d+:%d+$") ~= nil
+        print(string.format("[ServerIP] %s  (kaynak: %s%s)", s, src or "?", valid and "" or ", IP:PORT formatinda degil"))
+    end
+end
+
+callbacks.Register("CreateMove", "print_server_ip", function(cmd)
+    ticks = ticks + 1
+    if ticks >= POLL_TICKS then ticks = 0; check() end
+end)
+
+print("[ServerIP] aktif")
+check()
