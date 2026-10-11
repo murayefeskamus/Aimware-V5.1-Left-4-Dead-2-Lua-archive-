@@ -1,0 +1,13 @@
+local was_pressed = false
+
+callbacks.Register("CreateMove", function(cmd)
+    local is_q_down = input.IsButtonDown(0x51)
+
+    if is_q_down and not was_pressed then
+        engine.AddOutSeqNr(250)
+        print("qs on")
+        was_pressed = true
+    elseif not is_q_down then
+        was_pressed = false
+    end
+end)
