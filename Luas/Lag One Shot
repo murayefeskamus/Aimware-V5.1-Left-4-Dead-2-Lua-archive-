@@ -1,0 +1,84 @@
+Use it with speedhack 
+
+
+
+
+
+pcall(ffi.cdef, [[
+    void* GetModuleHandleA(const char* name);
+    void* GetProcAddress(void* module, const char* name);
+    typedef void* (*CreateInterfaceFn)(const char* name, int* ret);
+    short GetAsyncKeyState(int vKey);
+]])
+local C = ffi.C
+
+
+local KEY          = 0x05     
+local SEQ_ADD      = 20       
+local END_SLOT     = "slot1"   
+local SWITCH_EVERY = 0.0     
+
+local VT_CLIENTCMD_UNRESTRICTED = 107
+
+local engine_iface
+local function get_engine_iface()
+    if engine_iface then return engine_iface end
+    local h = C.GetModuleHandleA("engine.dll")
+    if h == nil then return nil end
+    local p = C.GetProcAddress(h, "CreateInterface")
+    if p == nil then return nil end
+    local e = ffi.cast("CreateInterfaceFn", p)("VEngineClient013", nil)
+    if e == nil then return nil end
+    engine_iface = e
+    return e
+end
+
+local ClientCmdT = ffi.typeof("void(__fastcall*)(void*, void*, const char*)")
+
+local function client_cmd(str)
+    local e = get_engine_iface()
+    if not e then return end
+    local vt = ffi.cast("void***", e)[0]
+    ffi.cast(ClientCmdT, vt[VT_CLIENTCMD_UNRESTRICTED])(e, nil, str)
+end
+
+local function now()
+    if globals and globals.RealTime then return globals.RealTime() end
+    return os.clock()
+end
+
+local function key_down()
+    return bit.band(C.GetAsyncKeyState(KEY), 0x8000) ~= 0
+end
+
+local was_down, toggle, next_switch = false, false, 0
+
+callbacks.Register("CreateMove", "lag_oneshot", function(cmd)
+    if not entities.GetLocalPlayer() then was_down = false return end
+
+    local down = key_down()
+    local t    = now()
+
+    if down and not was_down then
+        local ok, err = pcall(engine.addoutseqnr, SEQ_ADD)
+        if not ok then print("[LagOneShot] engine.addoutseqnr hatasi: " .. tostring(err)) end
+    end
+
+    if down then
+        if t >= next_switch then
+            toggle = not toggle
+            client_cmd(toggle and "slot2" or "slot1")
+            next_switch = t + SWITCH_EVERY
+        end
+    elseif was_down and END_SLOT then
+        client_cmd(END_SLOT)
+    end
+
+    was_down = down
+end)
+
+callbacks.Register("Unload", "lag_oneshot_unload", function()
+    print("[LagOneShot] kaldirildi")
+end)
+
+print("[LagOneShot] aktif (tus: 0x" .. string.format("%02X", KEY) .. ", seq: " .. SEQ_ADD .. ")")
