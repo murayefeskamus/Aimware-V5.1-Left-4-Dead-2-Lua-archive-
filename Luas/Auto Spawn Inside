@@ -1,0 +1,98 @@
+
+pcall(ffi.cdef, [[ void* GetModuleHandleA(const char* name); ]])
+
+local SEQ_ADD     = 600
+local MIN_GAP_SEC = 0.25   
+local DEBUG_LOG   = true
+
+local LOCALPLAYER_RVA = 0x726BD8
+local OFF_ISGHOST     = 0x1C9A
+local OFF_STATE       = 0x1C9C
+local OFF_DELAY_CUR   = 0x1CA4
+
+local client_mod = ffi.C.GetModuleHandleA("client.dll")
+if client_mod == nil then print("[GhostReadySeq] client.dll bulunamadi") return end
+local client_base = tonumber(ffi.cast("uintptr_t", client_mod))
+
+local function now()
+    if globals and globals.RealTime then return globals.RealTime() end
+    return os.clock()
+end
+
+local function find_seq_fn()
+    local candidates =
+    {
+        { "Engine", "AddOutSeqNr" },
+    }
+    for _, c in ipairs(candidates) do
+        local tbl = rawget(_G, c[1])
+        if tbl ~= nil then
+            local ok, fn = pcall(function() return tbl[c[2]] end)
+            if ok and type(fn) == "function" then
+                return fn, c[1] .. "." .. c[2], tbl
+            end
+        end
+    end
+    return nil
+end
+
+local seq_fn, seq_name, seq_tbl = find_seq_fn()
+if seq_fn then
+    print("[GhostReadySeq] bulundu: " .. seq_name)
+else
+    print("[GhostReadySeq] addoutseqnr bulunamadi. Mevcut fonksiyonlar:")
+    for _, tname in ipairs({ "engine", "Engine", "EngineClient" }) do
+        local tbl = rawget(_G, tname)
+        if type(tbl) == "table" then
+            local names = {}
+            for k, v in pairs(tbl) do
+                if type(v) == "function" then names[#names + 1] = tostring(k) end
+            end
+            table.sort(names)
+            print("  " .. tname .. ": " .. table.concat(names, ", "))
+        end
+    end
+end
+
+local was_ready, last_fire = false, -100
+
+local function tick()
+    local lp = tonumber(ffi.cast("uintptr_t*", client_base + LOCALPLAYER_RVA)[0])
+    if not lp or lp < 0x10000 then was_ready = false return end
+
+    local ready = false
+    if ffi.cast("uint8_t*", lp + OFF_ISGHOST)[0] ~= 0 then
+        local state = ffi.cast("int*", lp + OFF_STATE)[0]
+        local delay = ffi.cast("int*", lp + OFF_DELAY_CUR)[0]
+        ready = (state == 0 and delay <= 0)
+    end
+
+    if ready and not was_ready then
+        local t = now()
+        if (t - last_fire) >= MIN_GAP_SEC then
+            last_fire = t
+            local ok, err = false, "fonksiyon bulunamadi"
+            if seq_fn then
+                ok, err = pcall(seq_fn, SEQ_ADD)
+                if not ok then ok, err = pcall(seq_fn, seq_tbl, SEQ_ADD) end   
+            end
+            if DEBUG_LOG then
+                if ok then print("[GhostReadySeq] hazir -> " .. seq_name .. "(" .. SEQ_ADD .. ")")
+                else print("[GhostReadySeq] addoutseqnr hatasi: " .. tostring(err)) end
+            end
+        end
+    end
+
+    was_ready = ready
+end
+
+callbacks.Register("CreateMove", "ghost_ready_seq", function(cmd)
+    local ok, err = pcall(tick)
+    if not ok and DEBUG_LOG then print("[GhostReadySeq] hata: " .. tostring(err)) end
+end)
+
+callbacks.Register("Unload", "ghost_ready_seq_unload", function()
+    print("[GhostReadySeq] kaldirildi")
+end)
+
+print("[GhostReadySeq] aktif (seq: " .. SEQ_ADD .. ")")
