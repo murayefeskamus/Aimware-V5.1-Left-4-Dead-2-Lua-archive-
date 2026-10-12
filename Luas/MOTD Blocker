@@ -1,0 +1,78 @@
+pcall(ffi.cdef, [[
+    void* GetModuleHandleA(const char* name);
+    int   VirtualProtect(void* addr, unsigned long size, unsigned long newProt, unsigned long* oldProt);
+]])
+local C = ffi.C
+
+if _G.__MOTD_UNHOOK then pcall(_G.__MOTD_UNHOOK) end
+
+local BLOCK_MODE = "all"       
+local DEBUG_LOG  = true
+
+local VT_RVA   = 0x5E4EDC      
+local SLOT     = 10
+local FN_RVA   = 0x1EA580      
+local MSG_OFF  = 279           
+
+local client_mod = C.GetModuleHandleA("client.dll")
+if client_mod == nil then print("[BlockMOTD] client.dll bulunamadi") return end
+local base = tonumber(ffi.cast("uintptr_t", client_mod))
+
+local slot     = ffi.cast("uintptr_t*", base + VT_RVA + SLOT * 4)
+local expected = base + FN_RVA
+
+if tonumber(slot[0]) ~= expected then
+    print("[BlockMOTD] vtable slotu beklenen degil (baska hook ya da farkli surum), iptal")
+    return
+end
+
+local ShowT = ffi.typeof("void(__fastcall*)(void*, void*, uint8_t)")
+local orig  = ffi.cast(ShowT, expected)
+
+local blocked = 0
+
+local function write_slot(val)
+    local old = ffi.new("unsigned long[1]")
+    C.VirtualProtect(slot, 4, 0x04, old)                 -- PAGE_READWRITE
+    slot[0] = val
+    C.VirtualProtect(slot, 4, old[0], old)
+end
+
+local hook = ffi.cast(ShowT, function(this, edx, state)
+    if state ~= 0 then
+        local block = true
+        if BLOCK_MODE == "hostfile" then
+            local ok, s = pcall(ffi.string, ffi.cast("char*", this) + MSG_OFF, 8)
+            block = ok and s:lower() == "hostfile"
+        end
+        if block then
+            blocked = blocked + 1
+            return
+        end
+    end
+    orig(this, edx, state)
+end)
+
+write_slot(ffi.cast("uintptr_t", hook))
+
+local last_reported = 0
+callbacks.Register("CreateMove", "block_motd_report", function(cmd)
+    if DEBUG_LOG and blocked ~= last_reported then
+        last_reported = blocked
+        print("[BlockMOTD] engellendi (toplam: " .. blocked .. ")")
+    end
+end)
+
+local function unhook()
+    write_slot(expected)
+    hook:free()
+    _G.__MOTD_UNHOOK = nil
+end
+_G.__MOTD_UNHOOK = unhook
+
+callbacks.Register("Unload", "block_motd_unload", function()
+    unhook()
+    print("[BlockMOTD] kaldirildi")
+end)
+
+print("[BlockMOTD] aktif (mod: " .. BLOCK_MODE .. ")")
