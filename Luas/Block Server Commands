@@ -1,0 +1,80 @@
+pcall(ffi.cdef, [[
+    void* GetModuleHandleA(const char* name);
+    int   VirtualProtect(void* addr, unsigned long size, unsigned long newProt, unsigned long* oldProt);
+]])
+local C = ffi.C
+
+local RVA   = 0x4E440
+local SIG   = { 0x8B, 0xC1, 0x8B, 0x48, 0x50, 0x8B, 0x11, 0x50, 0x8B, 0x42, 0x08, 0xFF, 0xD0, 0xC3,
+                0xCC, 0xCC, 0xB8, 0x0C, 0x00, 0x00, 0x00, 0xC3 }
+local PATCH = { 0xB0, 0x01, 0xC3 }
+
+local mod = C.GetModuleHandleA("engine.dll")
+if mod == nil then print("[BlockServerCmds] engine.dll bulunamadi") return end
+local base = tonumber(ffi.cast("uintptr_t", mod))
+
+local function match(addr)
+    local p = ffi.cast("uint8_t*", addr)
+    for i = 1, #SIG do
+        if p[i - 1] ~= SIG[i] then return false end
+    end
+    return true
+end
+
+local function find_target()
+    if match(base + RVA) then return base + RVA end
+
+    local dos = ffi.cast("uint8_t*", base)
+    local e_lfanew = ffi.cast("uint32_t*", dos + 0x3C)[0]
+    local nt = base + e_lfanew
+    local num_sections = ffi.cast("uint16_t*", nt + 6)[0]
+    local opt_size     = ffi.cast("uint16_t*", nt + 20)[0]
+    local sec = nt + 24 + opt_size
+
+    local found, count = nil, 0
+    for s = 0, num_sections - 1 do
+        local h = sec + s * 40
+        local vsize = ffi.cast("uint32_t*", h + 8)[0]
+        local vaddr = ffi.cast("uint32_t*", h + 12)[0]
+        local chars = ffi.cast("uint32_t*", h + 36)[0]
+        if bit.band(chars, 0x20000000) ~= 0 then                      
+            local b = base + vaddr
+            for i = 0, vsize - #SIG do
+                if match(b + i) then
+                    found, count = b + i, count + 1
+                end
+            end
+        end
+    end
+
+    if count == 1 then return found end
+    if count > 1 then print("[BlockServerCmds] imza birden fazla yerde eslesti (" .. count .. "), patch atilmadi") end
+    return nil
+end
+
+local target = find_target()
+if not target then
+    print("[BlockServerCmds] HATA: NET_StringCmd::Process bulunamadi, patch atilmadi")
+    return
+end
+
+local saved = {}
+local tp = ffi.cast("uint8_t*", target)
+for i = 1, #PATCH do saved[i] = tp[i - 1] end
+
+local function write_bytes(addr, bytes)
+    local ptr = ffi.cast("uint8_t*", addr)
+    local old = ffi.new("unsigned long[1]")
+    C.VirtualProtect(ptr, #bytes, 0x40, old)                    
+    for i = 1, #bytes do ptr[i - 1] = bytes[i] end
+    C.VirtualProtect(ptr, #bytes, old[0], old)
+end
+
+write_bytes(target, PATCH)
+print(string.format("[BlockServerCmds] NET_StringCmd::Process patched @ 0x%X", target))
+print("[BlockServerCmds] Sunucudan gelen string komutlari engellendi.")
+
+callbacks.Register("Unload", "block_server_cmds_unload", function()
+    write_bytes(target, saved)
+    print("[BlockServerCmds] kaldirildi, orijinal byte'lar geri yazildi")
+end)
