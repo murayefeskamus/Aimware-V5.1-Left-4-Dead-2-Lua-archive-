@@ -1,0 +1,54 @@
+basic autopistol for ragebotting in hvh instead of legitbot 
+
+
+
+
+
+
+local PISTOLS = {
+    ["CWeaponPistol"] = true,
+    ["CWeaponMagnum"] = true,
+}
+
+local function IsPistol(cls)
+    if cls == nil then return false end
+    if PISTOLS[cls] then return true end
+    if string.find(cls, "Pistol") or string.find(cls, "Magnum") then return true end
+    return false
+end
+
+local function GetActiveWeapon(ply)
+    local ok, wep = pcall(function() return ply:GetPropEntity("m_hActiveWeapon") end)
+    if ok and wep ~= nil then return wep end
+
+    local ok2, h = pcall(function() return ply:GetProp("m_hActiveWeapon") end)
+    if ok2 and type(h) == "number" and h ~= 0 and h ~= -1 then
+        return entities.GetByIndex(h % 2048)
+    end
+    return nil
+end
+
+local toggle_state = false
+
+callbacks.Register("CreateMove", "l4d2_max_autopistol", function(cmd)
+    if not cmd then return end
+
+    if not input.IsButtonDown(1) then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local wep = GetActiveWeapon(me)
+    if not wep then return end
+
+    local cls = wep:GetClass()
+    if not IsPistol(cls) then return end
+
+    toggle_state = not toggle_state
+
+    if toggle_state then
+        cmd.buttons = bit.bor(cmd.buttons, 1)  
+    else
+        cmd.buttons = bit.band(cmd.buttons, bit.bnot(1)) 
+    end
+end)
