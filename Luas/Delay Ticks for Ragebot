@@ -1,0 +1,84 @@
+delayed ticks for rifles etc bcuz of less blantant cheating for server sided silent aimbot. Have fun 
+
+
+
+
+
+local DELAY_TICKS = 7
+local current_tick = 0
+local last_shot_tick = 0
+
+local function GetActiveWeapon(ply)
+    local ok, wep = pcall(function() return ply:GetPropEntity("m_hActiveWeapon") end)
+    if ok and wep ~= nil then return wep end
+    
+    local ok2, h = pcall(function() return ply:GetProp("m_hActiveWeapon") end)
+    if ok2 and type(h) == "number" and h ~= 0 and h ~= -1 then
+        return entities.GetByIndex(h % 2048)
+    end
+    return nil
+end
+
+local function IsAK47(wep)
+    if not wep then return false end
+    
+    local ok_model, model = pcall(function() return wep:GetModel() or wep:GetPropString("m_ModelName") end)
+    if ok_model and type(model) == "string" then
+        if string.find(string.lower(model), "ak47") then
+            return true
+        end
+    end
+
+    local ok_cls, cls = pcall(function() return wep:GetClass() end)
+    if ok_cls and type(cls) == "string" then
+        if string.find(string.lower(cls), "ak47") then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function IsSupportedWeapon(wep)
+    if not wep then return false end
+    
+    if IsAK47(wep) then return false end
+
+    local ok, cls = pcall(function() return wep:GetClass() end)
+    if not ok or not cls then return false end
+    local lowerCls = string.lower(cls)
+  
+    if string.find(lowerCls, "pistol") or 
+       string.find(lowerCls, "magnum") or 
+       string.find(lowerCls, "submachinegun") or 
+       string.find(lowerCls, "smg") or 
+       string.find(lowerCls, "rifle") then
+        return true
+    end
+
+    return false
+end
+
+callbacks.Register("CreateMove", "l4d2_7tick_delay_no_ak", function(cmd)
+    if not cmd then return end
+
+    current_tick = current_tick + 1
+
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+    local wep = GetActiveWeapon(me)
+    if not wep then return end
+
+    if not IsSupportedWeapon(wep) then return end
+
+    local is_attacking = bit.band(cmd.buttons, 1) ~= 0
+
+    if is_attacking then
+        if (current_tick - last_shot_tick) < DELAY_TICKS then
+            cmd.buttons = bit.band(cmd.buttons, bit.bnot(1)) 
+        else
+            last_shot_tick = current_tick 
+        end
+    end
+end)
