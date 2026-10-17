@@ -11,8 +11,7 @@ Configs: basic Import and Export shit just copy all and paste it to Aimware afte
 zm.cfg: can turn off anti obs and turn on no boomer vomit etc.. just set all visuals as u guys wish. 0 smooth is dangerous for demos its catchable use 1 instead of this 
 turn off no recoil and anti obs and bla bla if u record on obs. or just say "i typed !shake" KJDADŞHDFŞWSHFWE always works. smooth 0 and 0.5 tp ur crosshair so its dangerous
 even if u re on record or smth use 1 least 1.5 sometimes idk also u can use 0 in 150+ms like im an eu player so i can use 0 smooth in Heizemod its basic groundskeet shit. Totally 
-safe for anti cheat even its safe for l4d2center anti cheat. Tested and approved <img width="720" height="168" alt="dsa" src="https://github.com/user-attachments/assets/1b9c6b6f-00d1-4ee3-84fe-9000f28d09cd" />
-<img width="720" height="168" alt="dse" src="https://github.com/user-attachments/assets/db03055a-90db-4df2-85c2-68003a8d6aa5" />
+safe for anti cheat even its safe for l4d2center anti cheat. Tested and approved 
 
 Display Record.cfg: same as zm cfg but no esp no chams AND i suggest u guys DO NOT use any lua especially visuals for so obvious reason. just use this shit for aim assist n display record streams like old mirum
 pov status shit etc..
