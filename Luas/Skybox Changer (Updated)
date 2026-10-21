@@ -1,4 +1,4 @@
--- Skybox Changer 
+-- Skybox Changer (updated)
 
 local ref = gui.Reference("Misc", "General", "Extra")
 
@@ -25,11 +25,11 @@ local SKYBOXES = {
 
 local DEFAULT_SKY = "sky_l4d_urban01_hdr"
 
-ffi.cdef[[
+pcall(ffi.cdef, [[
     void* GetModuleHandleA(const char* lpModuleName);
     void* GetProcAddress(void* hModule, const char* lpProcName);
     int   VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
-]]
+]])
 
 local FCVAR_CHEAT = 16384
 
@@ -41,7 +41,6 @@ if client_module == 0 then print("[Sky] client.dll none") return end
 
 print(string.format("[Sky] engine.dll: 0x%X", tonumber(engine_module)))
 print(string.format("[Sky] client.dll: 0x%X", tonumber(client_module)))
-
 
 local function GetInterface(dll, name)
     local module = ffi.C.GetModuleHandleA(dll)
@@ -92,40 +91,37 @@ end
 local cv_sv_skyname = FindConVar("sv_skyname")
 if cv_sv_skyname then
     RemoveCheatFlag(cv_sv_skyname)
-    print("[Sky] fucksky found")
+    print("[Sky] sv_skyname found")
 else
-    print("[Sky] none")
+    print("[Sky] sv_skyname bulunamadi")
 end
 
-
-local r_loadskys_addr    = ffi.cast("void*", engine_module + 868112)
+-- R_LoadSkys: IDA'dan sub_100D3F10, offset degisti 0xD4110 -> 0xD3F10
+-- client_module + 0x7806A8: ConVar objesi, IDA dogruladi (mov ecx, offset unk_107806A8), degismemis
+local r_loadskys_addr    = ffi.cast("void*", engine_module + 0xD3F10)
 local skyname_strval_ptr = client_module + 0x7806A8 + 0x24
 
-print(string.format("[Sky] R_LoadSkys: 0x%X",     tonumber(ffi.cast("uintptr_t", r_loadskys_addr))))
-print(string.format("[Sky] strval ptr: 0x%X",     tonumber(skyname_strval_ptr)))
+print(string.format("[Sky] R_LoadSkys: 0x%X", tonumber(ffi.cast("uintptr_t", r_loadskys_addr))))
+print(string.format("[Sky] strval ptr: 0x%X", tonumber(skyname_strval_ptr)))
 
 local r_loadskys_fn = ffi.cast("void(__cdecl*)()", r_loadskys_addr)
 local sky_buf       = ffi.new("char[256]")
 
 local function ApplySky(name)
-    -- cvar set shit
     if cv_sv_skyname then
         SetConVarString(cv_sv_skyname, name)
     end
 
-    
     ffi.copy(sky_buf, name)
     local original_str = ffi.cast("uintptr_t*", skyname_strval_ptr)[0]
     ffi.cast("uintptr_t*", skyname_strval_ptr)[0] = ffi.cast("uintptr_t", sky_buf)
 
-    -- call
     local ok, err = pcall(r_loadskys_fn)
 
-    
     ffi.cast("uintptr_t*", skyname_strval_ptr)[0] = original_str
 
     if not ok then
-        print("[Sky] R_LoadSkys shitto errorito: " .. tostring(err))
+        print("[Sky] R_LoadSkys error: " .. tostring(err))
     else
         print("[Sky] Sky changed: " .. name)
     end
