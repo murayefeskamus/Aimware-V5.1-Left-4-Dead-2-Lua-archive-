@@ -96,8 +96,6 @@ else
     print("[Sky] sv_skyname bulunamadi")
 end
 
--- R_LoadSkys: IDA'dan sub_100D3F10, offset degisti 0xD4110 -> 0xD3F10
--- client_module + 0x7806A8: ConVar objesi, IDA dogruladi (mov ecx, offset unk_107806A8), degismemis
 local r_loadskys_addr    = ffi.cast("void*", engine_module + 0xD3F10)
 local skyname_strval_ptr = client_module + 0x7806A8 + 0x24
 
@@ -151,3 +149,11 @@ callbacks.Register("Unload", function()
 end)
 
 print("skybox changer ready")
+
+
+
+
+
+searched on IDA ""https://imgur.com/a/7a1LqUM"" GGEZ 
+
+
