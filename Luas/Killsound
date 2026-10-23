@@ -1,0 +1,24 @@
+ffi.cdef[[ bool PlaySoundA(const char* pszSound, void* hmod, uint32_t fdwSound); ]]
+local winmm = ffi.load("winmm")
+local SND_ASYNC = 0x0001
+local SND_FILENAME = 0x00020000
+
+local SOUND_PATH = "C:\\Windows\\Media\\Windows Ding.wav"
+
+local function PlayKillSound()
+    winmm.PlaySoundA(SOUND_PATH, nil, bit.bor(SND_ASYNC, SND_FILENAME))
+end
+
+client.AllowListener("player_death")
+callbacks.Register("FireGameEvent", "killsound", function(event)
+    if event:GetName() ~= "player_death" then return end
+    local attacker_uid = event:GetInt("attacker")
+    local victim_uid = event:GetInt("userid")
+    local local_player = entities.GetLocalPlayer()
+    if not local_player then return end
+    local my_info = client.GetPlayerInfo(local_player:GetIndex())
+    if not my_info then return end
+    if attacker_uid == my_info["UserID"] and attacker_uid ~= victim_uid then
+        PlayKillSound()
+    end
+end)
