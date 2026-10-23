@@ -1,0 +1,66 @@
+basic one 
+
+
+local MASK_SHOT = 0x46004003 
+local isWallbangClear = true
+
+callbacks.Register("CreateMove", "wallbang_trace", function(cmd)
+    local me = entities.GetLocalPlayer()
+    if not me or not me:IsAlive() then return end
+
+
+    local origin = me:GetAbsOrigin()
+    local src = origin + Vector3(0, 0, 64) 
+
+    local view_angles = cmd:GetViewAngles()
+    local forward = view_angles:Forward()
+    local dst = src + (forward * 8192)
+
+
+    local trace = engine.TraceLine(src, dst, MASK_SHOT)
+
+    if trace and trace.fraction < 1.0 then
+        local hit_entity = trace.entity
+        
+        if hit_entity and hit_entity:IsPlayer() then
+            isWallbangClear = true 
+        elseif hit_entity and hit_entity:GetClass() == "CInfected" then
+            isWallbangClear = true 
+        else
+ 
+            local wall_end = trace.endpos
+            local behind_wall_dst = wall_end + (forward * 150)
+            local trace2 = engine.TraceLine(wall_end, behind_wall_dst, MASK_SHOT)
+            
+            if trace2 and trace2.entity and trace2.entity:IsPlayer() then
+                isWallbangClear = true 
+            else
+                isWallbangClear = false 
+            end
+        end
+    else
+        isWallbangClear = true
+    end
+end)
+
+
+callbacks.Register("Draw", "wallbang_crosshair", function()
+    local sw, sh = draw.GetScreenSize()
+    local cx, cy = sw / 2, sh / 2
+    
+    local r, g, b
+    if isWallbangClear then
+        r, g, b = 0, 255, 255 
+    else
+        r, g, b = 255, 0, 0   
+    end
+
+    local size = 5
+    local gap = 2
+    
+    draw.Color(r, g, b, 255)
+    draw.Line(cx - size - gap, cy, cx - gap, cy)
+    draw.Line(cx + gap, cy, cx + size + gap, cy)
+    draw.Line(cx, cy - size - gap, cx, cy - gap)
+    draw.Line(cx, cy + gap, cx, cy + size + gap)
+end)
