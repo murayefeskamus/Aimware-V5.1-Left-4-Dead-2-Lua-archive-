@@ -1,0 +1,92 @@
+local ffi = ffi
+
+ffi.cdef[[
+    void* VirtualAlloc(void* lpAddress, size_t dwSize, uint32_t flAllocationType, uint32_t flProtect);
+    int VirtualProtect(void* lpAddress, size_t dwSize, uint32_t flNewProtect, uint32_t* lpflOldProtect);
+    void* memcpy(void* dest, const void* src, size_t n);
+    void* GetModuleHandleA(const char* lpModuleName);
+]]
+
+local PAGE_EXECUTE_READWRITE = 0x40
+local MEM_COMMIT = 0x1000
+local MEM_RESERVE = 0x2000
+local HOOK_SIZE = 6
+local TRAMPOLINE_SIZE = 64
+local BYTES_TO_COPY = 6
+
+-- Renk ayarları (0.0 - 1.0)
+local R = 0.5
+local G = 0.0
+local B = 1.0
+
+local base = tonumber(ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll")))
+local funcAddr = base + 0xEE5F0
+
+local GC = {}
+
+local fn_t = ffi.typeof("char(__thiscall*)(void*, int, int, int, int, int, char, int)")
+
+local function CreateTrampoline(original_fn, bytes_to_copy)
+    local trampoline = ffi.C.VirtualAlloc(nil, TRAMPOLINE_SIZE, MEM_COMMIT + MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+    if trampoline == nil then
+        print("[FL] VirtualAlloc fail")
+        return nil
+    end
+
+    for i = 0, TRAMPOLINE_SIZE - 1 do
+        ffi.cast("uint8_t*", trampoline)[i] = 0x90
+    end
+
+    ffi.C.memcpy(trampoline, ffi.cast("const void*", original_fn), bytes_to_copy)
+
+    local jump_pos = ffi.cast("uint8_t*", trampoline) + bytes_to_copy
+    local return_addr = ffi.cast("uint8_t*", original_fn) + bytes_to_copy
+    jump_pos[0] = 0x68
+    ffi.cast("uint32_t*", jump_pos + 1)[0] = ffi.cast("uint32_t", return_addr)
+    jump_pos[5] = 0xC3
+
+    return trampoline
+end
+
+local function WriteHook(target_addr, dest_addr)
+    local old_prot = ffi.new("uint32_t[1]")
+    if ffi.C.VirtualProtect(ffi.cast("void*", target_addr), HOOK_SIZE, PAGE_EXECUTE_READWRITE, old_prot) == 0 then
+        print("[FL] VirtualProtect fail")
+        return false
+    end
+    local ptr = ffi.cast("uint8_t*", target_addr)
+    ptr[0] = 0x68
+    ffi.cast("uint32_t*", ptr + 1)[0] = ffi.cast("uint32_t", ffi.cast("void*", dest_addr))
+    ptr[5] = 0xC3
+    ffi.C.VirtualProtect(ffi.cast("void*", target_addr), HOOK_SIZE, old_prot[0], old_prot)
+    return true
+end
+
+local original_fn = nil
+
+local hooked_fn = ffi.cast(fn_t, function(thisptr, a2, a3, a4, a5, a6, a7, a8)
+    local result = ffi.cast(fn_t, original_fn)(thisptr, a2, a3, a4, a5, a6, a7, a8)
+    if a2 ~= 0 then
+        ffi.cast("float*", a2 + 60)[0] = R
+        ffi.cast("float*", a2 + 64)[0] = G
+        ffi.cast("float*", a2 + 68)[0] = B
+    end
+    return result
+end)
+
+GC.hooked_fn = hooked_fn
+
+original_fn = CreateTrampoline(funcAddr, BYTES_TO_COPY)
+if original_fn == nil then
+    print("[FL] Trampoline fail")
+    return
+end
+
+GC.original_fn = original_fn
+
+if not WriteHook(funcAddr, hooked_fn) then
+    print("[FL] Hook fail")
+    return
+end
+
+print("[FL] OK! Trampoline: 0x" .. string.format("%X", tonumber(ffi.cast("uintptr_t", original_fn))))
