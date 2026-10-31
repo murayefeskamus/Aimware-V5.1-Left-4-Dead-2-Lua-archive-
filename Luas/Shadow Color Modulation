@@ -1,0 +1,17 @@
+local ffi = ffi
+
+ffi.cdef[[
+    void* GetModuleHandleA(const char* lpModuleName);
+    typedef unsigned char(__thiscall* SetShadowColor_t)(void* thisptr, unsigned char r, unsigned char g, unsigned char b);
+]]
+
+local base = tonumber(ffi.cast("uintptr_t", ffi.C.GetModuleHandleA("client.dll")))
+local shadowMgr = ffi.cast("void*", base + 0x752FF0)
+local SetShadowColor = ffi.cast("SetShadowColor_t", base + 0xC5AA0)
+
+-- Renk ayarları (0-255)
+local R = 1
+local G = 44
+local B = 128
+
+SetShadowColor(shadowMgr, R, G, B)
