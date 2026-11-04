@@ -1,0 +1,15 @@
+callbacks.Register("CreateMove", "duck", function(cmd)
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal then return end
+
+    local flags = pLocal:GetPropInt("m_fFlags")
+    if flags == nil then return end
+
+    local IN_JUMP = 4
+
+    if bit.band(flags, 1) == 1 then
+        cmd.buttons = bit.bor(cmd.buttons, IN_JUMP)
+    else
+        cmd.buttons = bit.band(cmd.buttons, bit.bnot(IN_JUMP))
+    end
+end)
