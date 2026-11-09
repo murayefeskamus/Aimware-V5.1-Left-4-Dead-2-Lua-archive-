@@ -1,0 +1,101 @@
+
+local ref  = gui.Reference("Visuals", "Other")
+local gbox = gui.Groupbox(ref, "Ghost Spawn State", 325, 450, 300, 0)
+local chk  = gui.Checkbox(gbox, "ghosttimer.enable", "Active", true)
+
+local FONT_LIST = draw.CreateFont("Tahoma", 13, 600)
+
+callbacks.Register("Draw", "ghosttimer_draw", function()
+    if not chk:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+
+    local prTable = entities.FindByClass("CTerrorPlayerResource")
+    local pr = prTable and prTable[1] or nil
+
+    local sw, sh = draw.GetScreenSize()
+    
+    local boxW = 260
+    local boxH = 95
+    local boxX = sw - boxW - 15
+    local boxY = sh - 360
+
+    draw.Color(15, 15, 15, 210)
+    draw.FilledRect(boxX, boxY, boxX + boxW, boxY + boxH)
+    draw.Color(80, 80, 80, 255)
+    draw.OutlinedRect(boxX, boxY, boxX + boxW, boxY + boxH)
+
+    draw.SetFont(FONT_LIST)
+    draw.Color(200, 200, 200, 255)
+    draw.Text(boxX + 10, boxY + 8, "Infected Player")
+    draw.Text(boxX + 160, boxY + 8, "Spawn Timer")
+    
+    draw.Color(60, 60, 60, 255)
+    draw.Line(boxX + 5, boxY + 24, boxX + boxW - 5, boxY + 24)
+
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+    local offsetY = boxY + 30
+    local currentTime = common.Time()
+
+    for _, ent in pairs(players) do
+        if ent and ent:IsPlayer() and not ent:IsDormant() and ent:GetTeamNumber() == 3 then
+            local name = ent:GetName() or "Unknown"
+            if string.len(name) > 14 then
+                name = string.sub(name, 1, 12) .. ".."
+            end
+            
+            local entIndex = ent:GetIndex()
+            local isAlive = ent:IsAlive()
+            local statusText = ""
+            local sr, sg, sb = 255, 255, 255
+
+            if not isAlive then
+                statusText = "Dead / Waiting"
+                sr, sg, sb = 150, 150, 150
+            else
+
+                local isGhost = 0
+                local becomeGhostAt = 0
+
+                if pr then
+                    pcall(function()
+                        isGhost = pr:GetPropInt("DT_TerrorPlayerResource", "m_isGhost", entIndex) or 0
+                        becomeGhostAt = pr:GetPropFloat("DT_TerrorPlayerResource", "m_flBecomeGhostAt", entIndex) or 0
+                    end)
+                end
+
+             
+                if isGhost == 0 then
+                    isGhost = ent:GetPropInt("m_isGhost") or 0
+                end
+
+                if isGhost == 1 then
+
+                    local remainingSpawn = becomeGhostAt - currentTime
+
+                    if remainingSpawn > 0 then
+                        statusText = string.format("%.1fs", remainingSpawn)
+                        sr, sg, sb = 100, 200, 255 
+                    else
+                        statusText = "Ready to Spawn"
+                        sr, sg, sb = 0, 255, 100 
+                    end
+                else
+                    statusText = "Active"
+                    sr, sg, sb = 200, 200, 200
+                end
+            end
+
+            draw.SetFont(FONT_LIST)
+            draw.Color(220, 220, 220, 255)
+            draw.Text(boxX + 10, offsetY, name)
+
+            draw.Color(sr, sg, sb, 255)
+            draw.Text(boxX + 160, offsetY, statusText)
+
+            offsetY = offsetY + 18
+            if offsetY > boxY + boxH - 10 then break end
+        end
+    end
+end)
