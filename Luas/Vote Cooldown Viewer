@@ -1,0 +1,97 @@
+-- sub_104FD370 in server dll. check this for defo cooldown time ("sv_vote_creation_timer", "180", 24576, "How often someone can individually call a vote.");
+
+--0x105905a9
+
+
+
+local ref  = gui.Reference("Visuals", "Other")
+local gbox = gui.Groupbox(ref, "Vote Panel", 325, 315, 300, 0)
+local chk  = gui.Checkbox(gbox, "minvote.enable", "Active", true)
+
+local FONT_LIST = draw.CreateFont("Tahoma", 13, 600)
+
+local playerVoteCooldowns = {}
+
+client.AllowListener("vote_started")
+client.AllowListener("vote_passed")
+client.AllowListener("vote_failed")
+client.AllowListener("vote_ended")
+
+callbacks.Register("FireGameEvent", "minvote_events", function(event)
+    if not chk:GetValue() then return end
+    
+    local ename = event:GetName()
+    if ename == "vote_started" then
+        local initiator = event:GetInt("initiator") or event:GetInt("userid") or 0
+        if initiator > 0 then
+            playerVoteCooldowns[initiator] = common.Time() + 180.0
+        end
+    end
+end)
+
+callbacks.Register("Draw", "minvote_draw", function()
+    if not chk:GetValue() then return end
+
+    local me = entities.GetLocalPlayer()
+    if not me then return end
+
+    local currentTime = common.Time()
+    local sw, sh = draw.GetScreenSize()
+    
+    local boxW = 260
+    local boxH = 95
+    local boxX = sw - boxW - 15
+    local boxY = sh - 240
+
+    draw.Color(15, 15, 15, 210)
+    draw.FilledRect(boxX, boxY, boxX + boxW, boxY + boxH)
+    draw.Color(80, 80, 80, 255)
+    draw.OutlinedRect(boxX, boxY, boxX + boxW, boxY + boxH)
+
+    draw.SetFont(FONT_LIST)
+    draw.Color(200, 200, 200, 255)
+    draw.Text(boxX + 10, boxY + 8, "Player Name")
+    draw.Text(boxX + 160, boxY + 8, "Vote Status")
+    
+    draw.Color(60, 60, 60, 255)
+    draw.Line(boxX + 5, boxY + 24, boxX + boxW - 5, boxY + 24)
+
+    local players = entities.FindByClass("CTerrorPlayer") or {}
+    local offsetY = boxY + 30
+
+    for _, ent in pairs(players) do
+        if ent and ent:IsPlayer() and not ent:IsDormant() then
+            local name = ent:GetName() or "Unknown"
+            if string.len(name) > 15 then
+                name = string.sub(name, 1, 13) .. ".."
+            end
+            
+            local entIndex = ent:GetIndex()
+            local cdEnd = playerVoteCooldowns[entIndex] or 0
+            
+            local statusText = ""
+            local sr, sg, sb = 255, 255, 255
+
+            if cdEnd > currentTime then
+                local rem = math.ceil(cdEnd - currentTime)
+                local m = math.floor(rem / 60)
+                local s = math.floor(rem % 60)
+                statusText = string.format("CD: %02d:%02d", m, s)
+                sr, sg, sb = 255, 165, 0 
+            else
+                statusText = "Can Vote"
+                sr, sg, sb = 0, 255, 100 --even with colors btw.
+            end
+
+            draw.SetFont(FONT_LIST)
+            draw.Color(220, 220, 220, 255)
+            draw.Text(boxX + 10, offsetY, name)
+
+            draw.Color(sr, sg, sb, 255)
+            draw.Text(boxX + 160, offsetY, statusText)
+
+            offsetY = offsetY + 18
+            if offsetY > boxY + boxH - 10 then break end
+        end
+    end
+end)
