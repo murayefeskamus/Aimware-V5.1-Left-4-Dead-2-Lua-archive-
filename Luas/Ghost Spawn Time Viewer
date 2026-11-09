@@ -1,0 +1,81 @@
+local ref  = gui.Reference("Visuals", "Other")
+local gbox = gui.Groupbox(ref, "Ghost Spawn Timer", 325, 450, 300, 0)
+local chk  = gui.Checkbox(gbox, "ghosttimer.enable", "Active", true)
+
+local FONT = draw.CreateFont("Tahoma", 13, 600)
+
+local ghostTimers = {}
+
+client.AllowListener("ghost_spawn_time")
+
+callbacks.Register("FireGameEvent", "ghost_spawn_listener", function(event)
+    if event:GetName() == "ghost_spawn_time" then
+        local userid = event:GetInt("userid", 0)
+        local spawntime = event:GetInt("spawntime", 0)
+        
+        if userid > 0 and spawntime > 0 then
+            local success, ent = pcall(function() return entities.GetByUserID(userid) end)
+            if success and ent then
+                local idx = ent:GetIndex()
+                ghostTimers[idx] = common.Time() + spawntime
+            end
+        end
+    end
+end)
+
+callbacks.Register("Draw", "ghost_spawn_draw", function()
+    if not chk:GetValue() then return end
+
+    local now = common.Time()
+    
+    local boxW = 260
+    local boxH = 95
+    local boxX = 20 
+    local boxY = 220 
+
+    draw.Color(15, 15, 15, 210)
+    draw.FilledRect(boxX, boxY, boxX + boxW, boxY + boxH)
+    draw.Color(80, 80, 80, 255)
+    draw.OutlinedRect(boxX, boxY, boxX + boxW, boxY + boxH)
+
+    draw.SetFont(FONT)
+    draw.Color(200, 200, 200, 255)
+    draw.Text(boxX + 10, boxY + 8, "Infected Player")
+    draw.Text(boxX + 160, boxY + 8, "Spawn Timer")
+    
+    draw.Color(60, 60, 60, 255)
+    draw.Line(boxX + 5, boxY + 24, boxX + boxW - 5, boxY + 24)
+
+    local offsetY = boxY + 30
+
+    for idx, endTime in pairs(ghostTimers) do
+        local remaining = endTime - now
+        
+        if remaining > 0 then
+            local ent = entities.GetByIndex(idx)
+            local name = "Oyuncu " .. idx
+            
+            if ent then
+                pcall(function()
+                    if ent:GetName() then name = ent:GetName() end
+                end)
+            end
+
+            if string.len(name) > 14 then
+                name = string.sub(name, 1, 12) .. ".."
+            end
+
+            draw.SetFont(FONT)
+            draw.Color(220, 220, 220, 255)
+            draw.Text(boxX + 10, offsetY, name)
+
+            draw.Color(100, 200, 255, 255)
+            draw.Text(boxX + 160, offsetY, string.format("%.1fs", remaining))
+            
+            offsetY = offsetY + 18
+            if offsetY > boxY + boxH - 10 then break end
+        else
+            ghostTimers[idx] = nil
+        end
+    end
+end)
